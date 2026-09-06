@@ -47,31 +47,85 @@ function Geometry.rectContains(rect, pos)
     return pos.x >= rect.x and pos.x <= rect.x + rect.w and pos.y >= rect.y and pos.y <= rect.y + rect.h
 end
 
---- Return whether two rectangles are close enough vertically to count as a row.
----
---- @param a PPRect First rectangle.
---- @param b PPRect Second rectangle.
---- @return boolean same_row Whether rectangle centers belong to the same row.
-function Geometry.sameRow(a, b)
-    local ay = (a.y or 0) + (a.h or 0) / 2
-    local by = (b.y or 0) + (b.h or 0) / 2
-    return math.abs(ay - by) <= math.max(a.h or 0, b.h or 0) * 0.45
-end
-
 --- Sort panels into reading order for a reading mode.
 ---
 --- Panels within the same row run right-to-left in manga mode and left-to-right
 --- in comic mode; rows themselves always run top to bottom. Shared by every
 --- detector so panel order never depends on which one produced the rectangles.
 ---
---- `sameRow()` is a pairwise, height-dependent threshold test, not a fixed
---- row band -- it is not guaranteed transitive (A~B and B~C does not imply
---- A~C), so it cannot be used directly as a `table.sort` comparator, which
---- requires a strict weak ordering. Instead, panels are grouped into rows by
---- transitive closure (union-find over the `sameRow` relation) first, then
---- each row is ordered internally, and rows are ordered by their mean
---- vertical center.
+--- Rows are deliberately built from their *top edges*, rather than by
+--- chaining together panels whose vertical centres happen to be near each
+--- other. A tall panel beside two stacked panels otherwise links the upper and
+--- lower tiers into one row; sorting that oversized row by x then sends the
+--- lower panel before the upper one. That breaks both left-to-right comic and
+--- right-to-left manga flow.
 ---
+--- @param panels PPPanel[] Unordered panel rectangles.
+--- @param mode PPReadingMode Reading order mode.
+--- @return PPPanel[] panels The same table, sorted in place.
+local function sortTopAlignedRows(panels, mode)
+    local indexed = {}
+    for _, rect in ipairs(panels) do
+        table.insert(indexed, { rect = rect })
+    end
+    table.sort(indexed, function(a, b)
+        local ay, by = a.rect.y or 0, b.rect.y or 0
+        if ay == by then
+            return (a.rect.x or 0) < (b.rect.x or 0)
+        end
+        return ay < by
+    end)
+
+    local rows = {}
+    for _, item in ipairs(indexed) do
+        local rect = item.rect
+        local y = rect.y or 0
+        local height = math.max(1, rect.h or 0)
+        local best_row, best_distance
+
+        for _, row in ipairs(rows) do
+            -- `row.top` never changes: every member is measured against the
+            -- same tier boundary, so a chain of slightly-offset panels cannot
+            -- grow a row downward.
+            local distance = math.abs(y - row.top)
+            local tolerance = math.min(height, row.min_height) * 0.25
+            if distance <= tolerance and (not best_distance or distance < best_distance) then
+                best_row, best_distance = row, distance
+            end
+        end
+
+        if not best_row then
+            best_row = { top = y, min_height = height, items = {} }
+            table.insert(rows, best_row)
+        else
+            best_row.min_height = math.min(best_row.min_height, height)
+        end
+        table.insert(best_row.items, item)
+    end
+
+    local sorted = {}
+    for _, row in ipairs(rows) do
+        table.sort(row.items, function(a, b)
+            local ax, bx = a.rect.x or 0, b.rect.x or 0
+            if ax == bx then
+                return (a.rect.y or 0) < (b.rect.y or 0)
+            end
+            if mode == "comic" then
+                return ax < bx
+            end
+            return ax > bx
+        end)
+        for _, item in ipairs(row.items) do
+            table.insert(sorted, item.rect)
+        end
+    end
+
+    for i, rect in ipairs(sorted) do
+        panels[i] = rect
+    end
+    return panels
+end
+
 --- @param panels PPPanel[] Unordered panel rectangles.
 --- @param mode PPReadingMode Reading order mode.
 --- @return PPPanel[] panels The same table, sorted in place.
@@ -81,67 +135,7 @@ function Geometry.sortReadingOrder(panels, mode)
         return panels
     end
 
-    local parent = {}
-    for i = 1, n do
-        parent[i] = i
-    end
-    local function find(i)
-        while parent[i] ~= i do
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        end
-        return i
-    end
-    for i = 1, n do
-        for j = i + 1, n do
-            if Geometry.sameRow(panels[i], panels[j]) then
-                local ri, rj = find(i), find(j)
-                if ri ~= rj then
-                    parent[ri] = rj
-                end
-            end
-        end
-    end
-
-    local groups = {}
-    for i = 1, n do
-        local root = find(i)
-        groups[root] = groups[root] or {}
-        table.insert(groups[root], i)
-    end
-
-    local roots, row_y = {}, {}
-    for root, idxs in pairs(groups) do
-        table.insert(roots, root)
-        local sum = 0
-        for _, i in ipairs(idxs) do
-            local rect = panels[i]
-            sum = sum + (rect.y or 0) + (rect.h or 0) / 2
-        end
-        row_y[root] = sum / #idxs
-    end
-    table.sort(roots, function(a, b)
-        return row_y[a] < row_y[b]
-    end)
-
-    local sorted = {}
-    for _, root in ipairs(roots) do
-        local idxs = groups[root]
-        table.sort(idxs, function(i, j)
-            if mode == "comic" then
-                return (panels[i].x or 0) < (panels[j].x or 0)
-            end
-            return (panels[i].x or 0) > (panels[j].x or 0)
-        end)
-        for _, i in ipairs(idxs) do
-            table.insert(sorted, panels[i])
-        end
-    end
-
-    for i = 1, n do
-        panels[i] = sorted[i]
-    end
-    return panels
+    return sortTopAlignedRows(panels, mode)
 end
 
 return Geometry
