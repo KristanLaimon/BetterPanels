@@ -43,9 +43,9 @@ It keeps KOReader's native panel detection, then adds ordered panel navigation, 
 - Panels finding on dark-background pages, where KOReader's own detector sees nothing.
 - Pre-fetching the next panels while you read the current one, so swiping is instant (or at least very fast).
 
-## Compatibility
+## 🧩 Compatibility
 
-### KOReader versions
+### 📱 KOReader versions
 
 This plugin is compatible with KOReader across the following version range:
 
@@ -56,7 +56,7 @@ This plugin is compatible with KOReader across the following version range:
 
 This could work with even older versions, but not personally tested. If any issues with versions outside the previous range, open a github issue in this repo. I'll fix it ASAP.
 
-### File types formats supported
+### 📄 File types formats supported
 <ul>
   <li><em>.cbr (digital comic book archive):</em> Usual standard format for western comics</li>
   <li><em>.cbz (Comic Book Zip Archive):</em> The standard for mangas, usually found in this format when downloading from internet or in (.cbr). I strongly recommend using <a href="https://github.com/manga-download/hakuneko">Hakuneko (Downloader)</a> and <a href="https://github.com/ciromattia/kcc">KCC (Kindle Comic Converter)</a> to adapt hakuneko downloads to .cbz for mangas. This is the top priority format I give support/compatibility with this plugin</li>
@@ -74,7 +74,7 @@ If you have your mangas/comics in one of these formats, change them to more stan
 
 <em>I might add them to the support list in a future update, but since those formats aren't really built for comics, it's not a top priority on the Panels+ roadmap right now. (That said, if you want to tackle it and submit a PR, you're more than welcome to!)</em>
 
-### Kobo Compatilibity (kobo.koplugin >= 0.4.1)
+### 📲 Kobo Compatibility (kobo.koplugin >= 0.4.1)
 
 This plugin works well with:
 
@@ -83,7 +83,7 @@ This plugin works well with:
 
 Tested against 0.4.1 version thanks to users feedback and the koreader plugins stability ecosystem it could work with previous versions. If any problems, create a github issue in this repo, I'll fix it ASAP.
 
-## Installation
+## 📦 Installation
 
 1. Download the latest release from the [releases page](https://github.com/KristanLaimon/BetterPanels/releases/latest) and unzip it.
 2. You should now have this folder: `panels_plus.koplugin`
@@ -91,11 +91,12 @@ Tested against 0.4.1 version thanks to users feedback and the koreader plugins s
 
 Common plugin paths:
 
-| Device | KOReader plugins directory |
+| Device / OS | KOReader plugins directory |
 | --- | --- |
 | Kindle | `/mnt/us/koreader/plugins/` |
 | Kobo | `.adds/koreader/plugins/` |
 | Android | `/sdcard/koreader/plugins/` |
+| Linux (Native / Arch / AppImage) | `~/.config/koreader/plugins/` |
 | Linux Flatpak | `~/.var/app/rocks.koreader.KOReader/config/koreader/plugins/` |
 
 The final path should look like this:
@@ -106,7 +107,7 @@ The final path should look like this:
 
 4. Restart KOReader after copying the folder.
 
-## Configuration & Usage
+## ⚙️ Configuration & Usage
 
 Configuration is as easy as just using the plugin itself!
 
@@ -130,7 +131,7 @@ Configuration is as easy as just using the plugin itself!
     - Cropped panel? No cropped? Margin?, already got in.
     - Smooth animations (Recommended in no ink-devices)
 
-### Gesture Actions
+### 👆 Gesture Actions
 
 Panels+ registers these KOReader actions:
 
@@ -141,10 +142,10 @@ Panels+ registers these KOReader actions:
 
 Use KOReader's gesture manager to bind them to taps, swipes, or other gestures for quick switching.
 
-### Developer's Personal Tip: The Cinematic Experience
+### 🎬 Developer's Personal Tip: The Cinematic Experience
 
 For a more fluent and immersive navigation, my personal recommendation is to set KOReader to **landscape (horizontal) rotation** and enable **strict-crop mode** in Panels+ with classic navigation for e-ink based devices and smooth navigation for android and non-e-ink devices. <br>
-While playing and testing this pluging from months of usage I found this setup the most convenient way to experience your manga (and probably the way it was intended). 
+While playing and testing this pluging from months of usage I found this setup the most convenient way to experience your manga (and probably the way it was intended).
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/ca4de34b-c9e4-4045-932a-8831cea1a2b4" controls width="420"></video>
@@ -154,7 +155,7 @@ While playing and testing this pluging from months of usage I found this setup t
 <br>
 Of course if you prefer vertical, with margin, loose cropped or even animated, then use it that way!. I've made all this config fully customizable to make this plugin `adapt to you`, not you to the plugin. Your manga, your rules.
 
-### OCR Word Lookup Setup (Experimental)
+### 🔍 OCR Word Lookup Setup (Experimental)
 
 Panels+ introduces experimental OCR support, allowing you to touch & hold text inside a zoomed-in panel to look up words in the dictionary—even in comics/manga! Works across `.CBZ`, `.CBR`, and `.PDF`.
 
@@ -166,21 +167,34 @@ Panels+ introduces experimental OCR support, allowing you to touch & hold text i
 
 <em>(Note: Word detection is tricky on hand-lettered or stylized comic text and might not always get it exactly right. As a workaround, I recommend binding a comfortable multi-swipe gesture to "Open dictionary lookup" as a fallback!)</em>
 
-## Why This Exists
+## 🎯 Why This Exists
 
 I'm a manga fan and I read a lot in my e-reader and found out some panels are too small to read comfortably on the full page, then I tried using ko-reader native zoom, but then I need to zoom out, change panel, zoom-in, read the panel, zoom-out, zoom-in, read, and so on... (ugh!).
 
 KOReader can detect panels, but the native flow often means zooming into one panel, leaving zoom, moving to the next panel, and repeating that cycle.
 
-I wanted to create `Panels+` so (we manga-comic readers) could have the panel navigation we deserve with a normal reading flow!. 
+I wanted to create `Panels+` so (we manga-comic readers) could have the panel navigation we deserve with a normal reading flow!.
 
 This supports screenshots while zoomed into panels, so you can capture the exact panel view instead of only taking full-page screenshots, and use them as screen savers, book covers, anything you want.
 
 ---
 
-## For Developers
+## 🌐 For Translators (We Need Your Help!)
 
-### Documentation 
+Starting from version **v1.4.0**, Panels+ includes localization support, and we'd love to translate the plugin into as many languages as possible!
+
+Rather than relying on machine or AI translation slop, we are looking for community collaborators to help craft authentic, high-quality human translations.
+
+If you're interested in contributing:
+- Check out our [Translations Quick Guide](./docs/translations/README.md) to get started.
+
+Currently there is only: ***English*** and ***Spanish*** support.
+
+---
+
+## 🛠️ For Developers
+
+### Documentation
 - [Introduction](docs/INTRO.md) — a first read: what the plugin replaces, how a page turns into a panel sequence, and the module map.
 - [Architecture](docs/ARCHITECTURE.md) — how the plugin is put together, and what happens between a long hold and a panel on screen.
 - [Panel detection](docs/DETECTION.md) — how panels are found, why there are two detectors, and every tuning knob.
@@ -190,7 +204,7 @@ This supports screenshots while zoomed into panels, so you can capture the exact
 - [Known Limitations](docs/KNOWN-LIMITATIONS.md) — current edge cases and known-behaviour (a todo-list to fix at the same time).
 - [Testing](docs/TESTING.md) — running the dependency-free test suite.
 
-### Development & Reference Repositories
+### 🔗 Development & Reference Repositories
 
 When developing on Panels+, it is recommended to clone the [`koreader`](https://github.com/koreader/koreader) base codebase and `kobo.koplugin` repository directly into your local project root folder:
 
@@ -201,7 +215,7 @@ git clone https://github.com/koreader/kobo.koplugin.git
 
 These folders are ignored via `.gitignore` and are not committed into this repository. Keeping them locally is purely for documentation and remaining KOReader internals aware during development; they are not involved in the plugin's final release code.
 
-### Linting & Formatting
+### 🧹 Linting & Formatting
 
 This project enforces a standard code style to maintain consistency across developers. We use:
 - **StyLua**: For automatic code formatting (`.stylua.toml`).
@@ -222,7 +236,7 @@ If you don't have these tools integrated directly into your editor, you can run 
 
 Note: CI workflows will automatically run these checks when you open a Pull Request.
 
-### Building From Source
+### 🏗️ Building From Source
 
 Clone or download this repository, then run:
 
@@ -238,7 +252,7 @@ On Windows PowerShell, run:
 
 The script creates `dist/panels_plus.koplugin`. Copy that generated folder into your KOReader plugins directory, then restart KOReader.
 
-## Contributions?
+## 🤝 Contributions?
 Project is actually stable, and personally tested in:
   - Kindle 12th Gen
 
@@ -249,5 +263,5 @@ I don't see any more options to include, but contributions are welcome for:
 
 Thanks for using the plugin or at least, taking a look into this repo.
 
-## License
+## 📜 License
 MIT License, check "LICENSE" file in this repository.
