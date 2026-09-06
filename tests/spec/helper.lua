@@ -86,6 +86,13 @@ preload("device", function()
             getHeight = function()
                 return 800
             end,
+            rotation_mode = 0,
+            getRotationMode = function(self)
+                return self.rotation_mode
+            end,
+            setRotationMode = function(self, mode)
+                self.rotation_mode = mode
+            end,
         },
     }
 end)
@@ -177,7 +184,16 @@ end)
 -- `framework.spy()` before requiring/exercising the code under test.
 preload("ui/uimanager", function()
     local UIManager = { _window_stack = {} }
-    for _, method_name in ipairs({ "sendEvent", "setDirty", "forceRePaint", "tickAfterNext", "unschedule", "close" }) do
+    for _, method_name in ipairs({
+        "sendEvent",
+        "setDirty",
+        "forceRePaint",
+        "tickAfterNext",
+        "unschedule",
+        "close",
+        "broadcastEvent",
+        "onRotation",
+    }) do
         UIManager[method_name] = function()
             return true
         end

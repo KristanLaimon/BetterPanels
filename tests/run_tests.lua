@@ -13,6 +13,7 @@ require("tests.spec.helper")
 
 local spec_modules = {
     "tests.spec.panelviewer_gotoviewrel_spec",
+    "tests.spec.viewer_controller_rotation_spec",
     "tests.spec.panelviewer_leftedge_spec",
     "tests.spec.panelviewer_tapnav_spec",
     "tests.spec.panelviewer_transform_spec",
