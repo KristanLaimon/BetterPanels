@@ -19,12 +19,20 @@ function NativePanelZoom:patchNativePanelZoom()
 
     highlight._panels_plus_plugin = self
     highlight._panels_plus_original_panel_zoom = highlight.onPanelZoom
+    highlight._panels_plus_original_hold = highlight.onHold
     highlight.onPanelZoom = function(reader_highlight, arg, ges)
         local plugin = reader_highlight._panels_plus_plugin
         if plugin and plugin:isEnabled() then
             return plugin:showPanelSequence(reader_highlight, ges)
         end
         return reader_highlight:_panels_plus_original_panel_zoom(arg, ges)
+    end
+    highlight.onHold = function(reader_highlight, arg, ges)
+        local plugin = reader_highlight._panels_plus_plugin
+        if plugin and plugin:isEnabled() and plugin:showEmbeddedImagePanels(reader_highlight, ges) then
+            return true
+        end
+        return reader_highlight:_panels_plus_original_hold(arg, ges)
     end
 end
 
@@ -60,7 +68,9 @@ function NativePanelZoom:restoreNativePanelZoom()
     local highlight = self.ui and self.ui.highlight
     if highlight and highlight._panels_plus_original_panel_zoom then
         highlight.onPanelZoom = highlight._panels_plus_original_panel_zoom
+        highlight.onHold = highlight._panels_plus_original_hold
         highlight._panels_plus_original_panel_zoom = nil
+        highlight._panels_plus_original_hold = nil
         highlight._panels_plus_plugin = nil
     end
 end

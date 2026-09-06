@@ -103,6 +103,7 @@ local PanelViewer = ImageViewer:extend({
     page = nil,
     panels = nil,
     image_rects = nil,
+    embedded_source_image = nil,
     reader_ui = nil,
     panel_prerender_callback = nil,
     detector_cycle_callback = nil,
@@ -1330,6 +1331,10 @@ function PanelViewer:onCloseWidget()
     self.image = nil
     self._images_list = nil
     self.image_rects = nil
+    if self.embedded_source_image and self.embedded_source_image.free then
+        self.embedded_source_image:free()
+    end
+    self.embedded_source_image = nil
     self.panels = nil
     self.panel_is_full_page = nil
     pcall(WordFinder.cleanup)
@@ -2274,6 +2279,19 @@ function PanelViewer:replaceButtonTable()
             },
         },
     }
+
+    -- Reflowable-document images are independent bitmaps, not regions of a
+    -- reader page. Their viewer therefore cannot safely re-run document
+    -- detection, rebuild a crop from `drawPagePart()`, or compose a smooth
+    -- page-space transition. Leave the controls that still apply (zoom,
+    -- rotate, screenshot, progress and close) available.
+    if self.embedded_source_image then
+        buttons[1][3].enabled = false -- reading order
+        buttons[2][3].enabled = false -- smooth transition
+        buttons[3][1].enabled = false -- more config
+        buttons[3][2].enabled = false -- detector
+        buttons[3][3].enabled = false -- crop mode
+    end
 
     self.button_table = ButtonTable:new({
         width = self.width - 2 * self.button_padding,

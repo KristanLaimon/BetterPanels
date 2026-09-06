@@ -398,6 +398,112 @@ function PageBitmap.build(document, page, settings)
     return map, reason
 end
 
+--- Build a binary ink map from an already-decoded image.
+---
+--- Reflow documents (EPUB/MOBI) cannot be mapped through `renderPage()`: the
+--- returned page geometry belongs to the laid-out text flow, not to an image
+--- embedded in it. KOReader can, however, give us that image's BlitBuffer
+--- directly. Keeping this path here means it uses exactly the same
+--- background-relative panel detector as fixed-layout pages.
+---
+--- @param bb table KOReader BlitBuffer returned by `getImageFromPosition()`.
+--- @param settings PPSettings Plugin settings.
+--- @return PPPageMap|nil map Ink map, or nil when the image cannot be mapped.
+--- @return string|nil reason Failure reason when `map` is nil.
+function PageBitmap.buildFromBlitbuffer(bb, settings)
+    settings = settings or Settings.defaults
+    if not bb then
+        return nil, "no image"
+    end
+
+    local stop = Timing.span("embedded image bitmap")
+    local target_width = settings.segment_target_width or Settings.defaults.segment_target_width
+    local ink_delta = settings.segment_ink_delta or Settings.defaults.segment_ink_delta
+    local detect_borders = settings.mode == "comic" and settings.segment_border_split == true
+    local border_luminance_max = settings.segment_border_luminance_max or Settings.defaults.segment_border_luminance_max
+
+    local map, reason, owned
+    local ok, err = pcall(function()
+        local work
+        work, owned = normalizeForSampling(bb)
+        local src_w, src_h = work.w, work.h
+        if not src_w or not src_h or src_w <= 0 or src_h <= 0 then
+            reason = "image has no dimensions"
+            return
+        end
+
+        local sample, kind = makeSampler(work)
+        local step = math.max(1, math.floor(src_w / target_width))
+        local w = math.floor(src_w / step)
+        local h = math.floor(src_h / step)
+        if w < 16 or h < 16 then
+            reason = "image too small to map"
+            return
+        end
+
+        local background_r, background_g, background_b = estimateBackground(sample, src_w, src_h)
+        local background = luminance(background_r, background_g, background_b)
+        local data = ffi.new("uint8_t[?]", w * h)
+        local border = detect_borders and ffi.new("uint8_t[?]", w * h) or nil
+        local ink, border_cells = 0, 0
+
+        for y = 0, h - 1 do
+            local row = y * w
+            local src_y = y * step
+            for x = 0, w - 1 do
+                local r, g, b = sample(x * step, src_y)
+                local idx = row + x
+                if colourDistance(r, g, b, background_r, background_g, background_b) > ink_delta then
+                    data[idx] = 1
+                    ink = ink + 1
+                end
+                if border and luminance(r, g, b) <= border_luminance_max then
+                    border[idx] = 1
+                    border_cells = border_cells + 1
+                end
+            end
+        end
+
+        map = {
+            w = w,
+            h = h,
+            data = data,
+            border = border,
+            ink = ink,
+            native_w = src_w,
+            native_h = src_h,
+            scale_x = src_w / w,
+            scale_y = src_h / h,
+            background = background,
+            background_color = { r = background_r, g = background_g, b = background_b },
+            inverted = background < 128,
+        }
+        stop(
+            string.format(
+                "%dx%d %s bg=%d,%d,%d%s ink=%d%%%s",
+                w,
+                h,
+                kind,
+                background_r,
+                background_g,
+                background_b,
+                map.inverted and " inverted" or "",
+                math.floor(ink * 100 / (w * h)),
+                border and string.format(" border=%d%%", math.floor(border_cells * 100 / (w * h))) or ""
+            )
+        )
+    end)
+
+    if owned then
+        pcall(owned.free, owned)
+    end
+    if not ok then
+        logger.warn("[Panels+] embedded image bitmap failed:", err)
+        return nil, "error"
+    end
+    return map, reason
+end
+
 -- Exposed for the small, render-free colour-map specs.
 PageBitmap._estimateBackground = estimateBackground
 PageBitmap._colourDistance = colourDistance

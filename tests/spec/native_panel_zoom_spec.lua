@@ -1,0 +1,40 @@
+--- Regression coverage for the reflow-document hold hook.
+local framework = require("tests.PanelsPlusTestFramework")
+local describe, it, assert, spy = framework.describe, framework.it, framework.assert, framework.spy
+
+local NativePanelZoom = require("src.native_panel_zoom")
+
+describe("NativePanelZoom embedded-image hold hook", function()
+    it("opens Panels+ first and preserves KOReader's image/text fallback", function()
+        local native_hold = spy()
+        native_hold.return_value = "native"
+        local native_zoom = spy()
+        local highlight = {
+            onHold = native_hold,
+            onPanelZoom = native_zoom,
+        }
+        local plugin = {
+            ui = { highlight = highlight },
+            enabled = true,
+            embedded_result = true,
+        }
+        function plugin:isEnabled()
+            return self.enabled
+        end
+        function plugin:showEmbeddedImagePanels()
+            return self.embedded_result
+        end
+
+        NativePanelZoom.patchNativePanelZoom(plugin)
+        assert.is_true(highlight:onHold(nil, { pos = {} }))
+        assert.equals(0, native_hold:callCount(), "Panels+ should consume a detected embedded image")
+
+        plugin.embedded_result = false
+        assert.equals("native", highlight:onHold(nil, { pos = {} }))
+        assert.equals(1, native_hold:callCount(), "text and unsupported images must fall back to KOReader")
+
+        NativePanelZoom.restoreNativePanelZoom(plugin)
+        assert.equals(native_hold, highlight.onHold)
+        assert.equals(native_zoom, highlight.onPanelZoom)
+    end)
+end)

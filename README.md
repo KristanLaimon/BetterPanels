@@ -63,18 +63,14 @@ This could work with even older versions, but not personally tested. If any issu
   <li><em>.cbr (digital comic book archive):</em> Usual standard format for western comics</li>
   <li><em>.cbz (Comic Book Zip Archive):</em> The standard for mangas, usually found in this format when downloading from internet or in (.cbr). I strongly recommend using <a href="https://github.com/manga-download/hakuneko">Hakuneko (Downloader)</a> and <a href="https://github.com/ciromattia/kcc">KCC (Kindle Comic Converter)</a> to adapt hakuneko downloads to .cbz for mangas. This is the top priority format I give support/compatibility with this plugin</li>
   <li><em>.pdf (Portable Document Format):</em> Another common format when downloading mangas/comics.</li>
+  <li><em>.epub / .mobi:</em> Panels+ automatically opens embedded raster images under a long press and detects panels inside them. Text remains handled by KOReader's normal reader.</li>
 </ul>
 
 <strong>File types formats NOT tested/supported (They could/could not work)</strong>
 <ul>
-  <li><em>.mobi</em></li>
-  <li><em>.epub</em></li>
   <li><em>.any_other</em></li>
 </ul>
-The main reason is because these <strong>are not meant to be used</strong> for documents heavy in images, 'cause, well, every page of a comic/manga is an image, and one image per page. These are text-only formats, with some images occasionally.
-If you have your mangas/comics in one of these formats, change them to more standard ones. Check <a href="https://github.com/ciromattia/kcc">KCC (Kindle Comic Converter)</a> and the <strong>File types formats supported</strong> previous section. <br><br>
-
-<em>I might add them to the support list in a future update, but since those formats aren't really built for comics, it's not a top priority on the Panels+ roadmap right now. (That said, if you want to tackle it and submit a PR, you're more than welcome to!)</em>
+EPUB and MOBI are still primarily text formats, so Panels+ only takes over when the long press lands on an embedded bitmap. Images with no detectable panel layout keep KOReader's native image viewer.
 
 ### 📲 Kobo Compatibility (kobo.koplugin >= 0.4.1)
 
