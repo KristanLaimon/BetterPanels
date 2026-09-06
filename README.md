@@ -43,6 +43,8 @@ It keeps KOReader's native panel detection, then adds ordered panel navigation, 
 - Panels finding on dark-background pages, where KOReader's own detector sees nothing.
 - Pre-fetching the next panels while you read the current one, so swiping is instant (or at least very fast).
 
+> Currently we're looking for translators. If you'd like to help us translate this plugin to your native language, [go to the translators section](#-for-translators-we-need-your-help).
+
 ## 🧩 Compatibility
 
 ### 📱 KOReader versions
