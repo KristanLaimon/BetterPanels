@@ -60,10 +60,11 @@ end
 --- lower panel before the upper one. That breaks both left-to-right comic and
 --- right-to-left manga flow.
 ---
---- Comic layouts can also place a tall trailing panel beside a vertical stack
---- of later panels. That panel shares a top edge with the first panel in the
---- stack, but its position at the right edge means the stack is read first:
---- left-to-right flow enters the stack and only then returns to the tall panel.
+--- A layout can also place a tall trailing panel beside a vertical stack of
+--- later panels. That panel shares a top edge with the first panel in the
+--- stack, but its position on the trailing edge means the stack is read first:
+--- comic flow enters the left-hand stack and manga flow enters the right-hand
+--- stack, returning to the tall panel only after that stack is complete.
 ---
 --- @param panels PPPanel[] Unordered panel rectangles.
 --- @param mode PPReadingMode Reading order mode.
@@ -128,10 +129,11 @@ local function sortTopAlignedRows(panels, mode)
         end)
     end
 
-    if mode == "comic" then
-        -- A trailing panel which overlaps later panels entirely to its left is
-        -- the closing panel of a nested left-hand stack. Hold it until the last
+    do
+        -- A trailing panel which overlaps later panels entirely on the leading
+        -- side is the closing panel of a nested stack. Hold it until the last
         -- such row, preserving 1,2,3,5,6,7,4 rather than 1,2,3,4,5,6,7.
+        -- The leading side is left in comic mode and right in manga mode.
         local deferred = {}
 
         for row_index, row in ipairs(rows) do
@@ -149,7 +151,10 @@ local function sortTopAlignedRows(panels, mode)
                         for _, later_item in ipairs(later_row.items) do
                             local later_rect = later_item.rect
                             local later_right = (later_rect.x or 0) + math.max(1, later_rect.w or 0)
-                            if later_right <= (rect.x or 0) then
+                            local rect_right = (rect.x or 0) + math.max(1, rect.w or 0)
+                            local is_in_leading_stack = mode == "comic" and later_right <= (rect.x or 0)
+                                or mode ~= "comic" and (later_rect.x or 0) >= rect_right
+                            if is_in_leading_stack then
                                 defer_until = later_index
                                 break
                             end
@@ -164,17 +169,10 @@ local function sortTopAlignedRows(panels, mode)
                     table.insert(sorted, rect)
                 end
             end
-
             if deferred[row_index] then
                 for _, item in ipairs(deferred[row_index]) do
                     table.insert(sorted, item.rect)
                 end
-            end
-        end
-    else
-        for _, row in ipairs(rows) do
-            for _, item in ipairs(row.items) do
-                table.insert(sorted, item.rect)
             end
         end
     end

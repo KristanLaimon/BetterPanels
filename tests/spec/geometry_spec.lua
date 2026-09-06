@@ -101,4 +101,37 @@ describe("Geometry.sortReadingOrder manga mode", function()
 
         assert.equals("right,left", orderedIDs(panels))
     end)
+
+    it("keeps a borderless panel with a slightly lower ink top in its row", function()
+        -- The right panel has no frame, so its detected rectangle begins at
+        -- the first drawing rather than the row's actual top edge. Manga flow
+        -- still reads it before its framed neighbour to the left.
+        local panels = {
+            panel("framed-left", 35, 527, 280, 111),
+            panel("borderless-right", 163, 555, 125, 83),
+        }
+
+        Geometry.sortReadingOrder(panels, "manga")
+
+        assert.equals("borderless-right,framed-left", orderedIDs(panels))
+    end)
+
+    it("reads a right-hand stack before its tall trailing panel", function()
+        -- This is the right-to-left mirror of the comic layout: the tall
+        -- left-hand panel starts alongside panel 3 but the right-hand stack
+        -- must finish before manga flow returns to it.
+        local panels = {
+            panel("4", 0, 120, 150, 380),
+            panel("6", 250, 330, 70, 100),
+            panel("2", 0, 0, 150, 100),
+            panel("1", 170, 0, 150, 100),
+            panel("7", 170, 330, 70, 100),
+            panel("5", 170, 250, 150, 60),
+            panel("3", 170, 120, 150, 110),
+        }
+
+        Geometry.sortReadingOrder(panels, "manga")
+
+        assert.equals("1,2,3,5,6,7,4", orderedIDs(panels))
+    end)
 end)
