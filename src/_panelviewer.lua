@@ -2281,16 +2281,12 @@ function PanelViewer:replaceButtonTable()
     }
 
     -- Reflowable-document images are independent bitmaps, not regions of a
-    -- reader page. Their viewer therefore cannot safely re-run document
-    -- detection, rebuild a crop from `drawPagePart()`, or compose a smooth
-    -- page-space transition. Leave the controls that still apply (zoom,
-    -- rotate, screenshot, progress and close) available.
+    -- reader page. Their viewer can still be rebuilt for reading order and
+    -- crop changes, but cannot use the native detector or compose a smooth
+    -- document-page transition.
     if self.embedded_source_image then
-        buttons[1][3].enabled = false -- reading order
         buttons[2][3].enabled = false -- smooth transition
-        buttons[3][1].enabled = false -- more config
         buttons[3][2].enabled = false -- detector
-        buttons[3][3].enabled = false -- crop mode
     end
 
     self.button_table = ButtonTable:new({

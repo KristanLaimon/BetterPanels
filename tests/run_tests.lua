@@ -14,6 +14,7 @@ require("tests.spec.helper")
 local spec_modules = {
     "tests.spec.panelviewer_gotoviewrel_spec",
     "tests.spec.native_panel_zoom_spec",
+    "tests.spec.embedded_image_spec",
     "tests.spec.panelviewer_reader_gesture_spec",
     "tests.spec.viewer_controller_rotation_spec",
     "tests.spec.panelviewer_leftedge_spec",
