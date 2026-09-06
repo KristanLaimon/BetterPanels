@@ -3,6 +3,27 @@
 --- This module is intentionally side-effect free. It exists so Sumneko/LuaLS can
 --- index the plugin's record shapes even when values originate from KOReader.
 
+--- KOReader WidgetContainer base class stub for LuaLS.
+--- @class WidgetContainer
+
+--- KOReader ImageViewer widget base class stub for LuaLS.
+--- @class ImageViewer
+
+--- KOReader InputContainer widget base class stub for LuaLS.
+--- @class InputContainer
+
+--- KOReader plugin that replaces native panel zoom with ordered panel reading.
+---
+--- @class PanelsPlus : WidgetContainer
+--- @field name string KOReader plugin id.
+--- @field is_doc_only boolean Whether the plugin requires an opened document.
+--- @field ui table KOReader reader UI object injected by WidgetContainer.
+--- @field settings PPSettings Runtime plugin settings.
+--- @field panel_cache table<string, PPPanel[]> Per-page panel cache.
+--- @field panel_cache_order string[] LRU cache key order.
+--- @field panel_prefetch_actions table<string, function> Scheduled prefetch jobs, by cache key.
+--- @field panel_prerender_action function|nil Scheduled next-panel warm-up, if any.
+
 --- Reading order used to sort panels and interpret horizontal swipes.
 --- @alias PPReadingMode '"manga"'|'"comic"'
 
@@ -105,5 +126,81 @@
 --- @field panels PPPanel[] Adjacent page's ordered panel rectangles.
 --- @field start_idx integer 1-based panel index the crossing should land on.
 --- @field target_rect PPPanel Crop rectangle (post crop-mode expansion) for the landing panel.
+
+--- ImageViewer subclass for navigating one page's ordered panel sequence.
+---
+--- @class PanelViewer : ImageViewer
+--- @field reading_mode PPReadingMode Current left/right panel order.
+--- @field crop_mode PPCropMode Current crop rendering mode.
+--- @field margin_ratio number Zoom-out fraction "margin" crop mode applies to non-full-page panels.
+--- @field bleed_ratio number Fraction of extra page area "loose" crop mode reveals around each panel.
+--- @field panel_is_full_page boolean[]|nil Per-panel flag matching `_images_list`, true when a panel spans nearly the whole page.
+--- @field detector PPDetector Detector the displayed panels came from.
+--- @field detector_cycle_callback fun(viewer:PanelViewer):boolean|nil
+--- @field invert_swipe boolean Whether horizontal swipe direction is inverted.
+--- @field tap_navigation boolean Whether tapping the left/right screen edges navigates between panels.
+--- @field swipe_navigation boolean Whether horizontal swipes navigate between panels.
+--- @field more_config_callback fun(viewer:PanelViewer):boolean|nil
+--- @field progress_bar_visible boolean Whether the bottom progress bar is shown.
+--- @field nav_transition_mode PPNavTransitionMode Instant swap vs. animated camera pan between panels.
+--- @field nav_transition_duration number Seconds the smooth camera pan takes.
+
+--- A tappable wrapper around one child widget.
+---
+--- @class TapTarget : InputContainer
+
+--- Dialog for picking image or device rotation.
+---
+--- @class RotationPickerDialog : InputContainer
+--- @field on_device_rotate fun(direction: "up"|"down"|"left"|"right")|nil
+--- @field on_image_rotate fun(direction: "up"|"down"|"left"|"right")|nil
+
+--- Panel viewer orchestration methods mixed into `PanelsPlus`.
+--- @class PPViewerControllerMethods
+
+--- Native panel-zoom integration methods mixed into `PanelsPlus`.
+--- @class PPNativePanelZoomMethods
+
+--- Main-menu methods mixed into `PanelsPlus`.
+--- @class PPMenuMethods
+
+--- Panel cache and prefetch methods mixed into `PanelsPlus`.
+--- @class PPCacheMethods
+
+--- Dispatcher action and event-handler methods mixed into `PanelsPlus`.
+--- @class PPActionMethods
+
+--- Ink-map segmenter module.
+--- @class PPSegmenterModule
+
+--- Document page bitmap helper module.
+--- @class PPPageBitmapModule
+
+--- Document page grayscale/color ink map.
+--- @class PPPageMap
+
+--- Geometry helper functions module.
+--- @class PPGeometryModule
+
+--- Memory stats helper module.
+--- @class PPMemoryModule
+
+--- Panel collector module.
+--- @class PPPanelCollectorModule
+
+--- Word finder / OCR helper module.
+--- @class PPWordFinder
+
+--- Settings storage and migration module.
+--- @class PPSettingsModule
+
+--- Timing and profiling helper module.
+--- @class PPTimingModule
+
+--- Native panel detector module.
+--- @class PPNativeDetectorModule
+
+--- OCR debugging and logging module.
+--- @class PPOcrDebug
 
 return {}
