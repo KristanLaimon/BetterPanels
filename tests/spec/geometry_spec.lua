@@ -44,6 +44,20 @@ describe("Geometry.sortReadingOrder comic mode", function()
         assert.equals("left,right", orderedIDs(panels))
     end)
 
+    it("keeps a borderless panel with a slightly lower ink top in its row", function()
+        -- The left panel has no frame, so its detected rectangle begins at the
+        -- first drawing rather than the row's actual top edge. It still reads
+        -- before its framed neighbour to the right.
+        local panels = {
+            panel("framed-right", 163, 527, 280, 111),
+            panel("borderless-left", 35, 555, 125, 83),
+        }
+
+        Geometry.sortReadingOrder(panels, "comic")
+
+        assert.equals("borderless-left,framed-right", orderedIDs(panels))
+    end)
+
     it("reads a left-hand stack before its tall trailing panel", function()
         -- The tall right-hand panel starts alongside panel 3 but spans the
         -- three rows of panels to its left. Comic flow must complete that

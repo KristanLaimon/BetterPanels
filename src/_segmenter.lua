@@ -176,7 +176,15 @@ local function findWidestGutter(projection, from, to, span, ink_ratio, min_lengt
         else
             if run_start and run_start > from then
                 local length = index - run_start
-                if length >= min_length and length > best_length then
+                -- A one-cell cut is only safe when it is truly blank. The
+                -- usual proportional tolerance is useful for multi-cell
+                -- gutters (which can pick up a halftone speck), but would let
+                -- a one-cell artwork gap split a Comic panel in two.
+                if
+                    length >= min_length
+                    and (length > 1 or projection[run_start] == 0)
+                    and length > best_length
+                then
                     best_start, best_stop, best_length = run_start, index - 1, length
                 end
             end
@@ -278,7 +286,7 @@ local function collectGutters(projection, from, to, span, ink_ratio, min_length)
         else
             if run_start and run_start > from then
                 local length = index - run_start
-                if length >= min_length then
+                if length >= min_length and (length > 1 or projection[run_start] == 0) then
                     table.insert(gutters, {
                         from = run_start,
                         to = index - 1,
@@ -641,15 +649,26 @@ function Segmenter.segment(map, settings)
     -- fraction of the page whatever the map resolution is. Raising the
     -- resolution alone therefore does not make narrow gutters detectable; the
     -- ratio has to come down with it. The two are reset together on migration.
+    --
+    -- Comic pages can have an intentional one-cell white seam between panels
+    -- after downsampling. That seam is still a complete, edge-to-edge strip of
+    -- page background, while a panel's own frame keeps ordinary artwork from
+    -- producing the same projection. Keep manga's two-cell floor (where tone
+    -- screens make one-cell gaps especially noisy), but let Comic mode retain
+    -- the single-cell seam rather than merging every panel in that row. The
+    -- generic ratio still controls Manga; Comic mode intentionally accepts the
+    -- smallest possible complete background seam.
     local min_dimension = math.min(map.w, map.h)
     local ctx = {
         rows = ffi.new("int32_t[?]", map.h),
         cols = ffi.new("int32_t[?]", map.w),
         ink_ratio = settings.segment_gutter_ink_ratio or defaults.segment_gutter_ink_ratio,
-        min_gutter = math.max(
-            2,
-            math.floor(min_dimension * (settings.segment_gutter_ratio or defaults.segment_gutter_ratio))
-        ),
+        min_gutter = settings.mode == "comic"
+                and 1
+            or math.max(
+                2,
+                math.floor(min_dimension * (settings.segment_gutter_ratio or defaults.segment_gutter_ratio))
+            ),
         min_side = math.max(
             4,
             math.floor(min_dimension * (settings.segment_min_panel_side or defaults.segment_min_panel_side))

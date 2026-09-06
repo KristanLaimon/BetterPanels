@@ -93,7 +93,13 @@ local function sortTopAlignedRows(panels, mode)
             -- same tier boundary, so a chain of slightly-offset panels cannot
             -- grow a row downward.
             local distance = math.abs(y - row.top)
-            local tolerance = math.min(height, row.min_height) * 0.25
+            -- A borderless panel's first ink can start appreciably below its
+            -- framed neighbour's top edge: its white upper margin is not part
+            -- of the detected rectangle. Treat that small offset as one tier
+            -- so comic flow still runs left-to-right across the row. Measuring
+            -- every item from the fixed row top (rather than chaining) keeps a
+            -- tall panel beside a stacked layout from joining lower tiers.
+            local tolerance = math.min(height, row.min_height) * 0.35
             if distance <= tolerance and (not best_distance or distance < best_distance) then
                 best_row, best_distance = row, distance
             end

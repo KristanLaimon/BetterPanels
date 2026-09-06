@@ -149,6 +149,19 @@ describe("Segmenter.segment panel cut", function()
         assert.equals(6, #segment(page, comic))
     end)
 
+    it("keeps one-cell comic seams between same-row panels", function()
+        local page = Page.new()
+        -- A 480px-wide B&W comic page can downsample a deliberate white
+        -- gutter to one map cell. The frames make the seam unambiguous: it is
+        -- blank from the top frame to the bottom frame, not a gap in artwork.
+        page:panel(12, 14, 150, 300)
+        page:panel(163, 14, 150, 300)
+        page:panel(314, 14, 154, 300)
+
+        assert.equals(1, #segment(page, manga))
+        assert.equals(3, #segment(page, comic))
+    end)
+
     it("keeps a splash page as a single panel", function()
         local page = splashPage()
 
@@ -242,5 +255,19 @@ describe("Segmenter.segment drawn border split", function()
 
         assert.equals(1, #segment(page, comic))
         assert.equals(2, #segment(page, comic_border_split))
+    end)
+
+    it("splits all three same-row panels separated by drawn borders", function()
+        local page = Page.new()
+        page:art(12, 12, MAP_W - 24, MAP_H - 24, 0.6)
+        page:black(12, 12, MAP_W - 24, 2)
+        page:black(12, MAP_H - 14, MAP_W - 24, 2)
+        page:black(12, 12, 2, MAP_H - 24)
+        page:black(MAP_W - 14, 12, 2, MAP_H - 24)
+        page:black(160, 12, 3, MAP_H - 24)
+        page:black(318, 12, 3, MAP_H - 24)
+
+        assert.equals(1, #segment(page, comic))
+        assert.equals(3, #segment(page, comic_border_split))
     end)
 end)
