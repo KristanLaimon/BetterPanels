@@ -42,8 +42,8 @@ flowchart TD
     BLOCK -->|yes| NATIVE
     BLOCK -->|no| RENDER["render page at ~1/3 scale<br/><i>_pagebitmap.lua</i>"]
 
-    RENDER --> BG["read the page border,<br/>take its median luminance<br/>= background"]
-    BG --> BIN["mark every cell whose luminance<br/>differs from background by<br/>more than segment_ink_delta"]
+    RENDER --> BG["read the page border,<br/>take each RGB channel's median<br/>= background"]
+    BG --> BIN["mark every cell whose largest RGB-channel<br/>difference from the background exceeds<br/>segment_ink_delta"]
     BIN --> CUT["recursive X-Y cut<br/><i>_segmenter.lua</i>"]
     CUT --> ACCEPT{"Segmenter.accept"}
 
@@ -63,20 +63,20 @@ flowchart TD
 ### Background is measured, not assumed
 
 This one step is what makes dark pages work. The outer ~1% ring of the page is
-its own paper or its inked backdrop — never panel content — so the median
-luminance of that ring is a reliable reference for what "empty" looks like on
+its own paper or its inked backdrop — never panel content — so the per-channel
+median of that ring is a reliable reference for what "empty" looks like on
 *this* page.
 
 Everything downstream is then relative:
 
 ```
-ink  ⇔  |luminance − background| > segment_ink_delta
+ink  ⇔  max(|red − bg.red|, |green − bg.green|, |blue − bg.blue|) > segment_ink_delta
 ```
 
-A white page yields `background ≈ 255` and marks dark strokes as ink. A black
-page yields `background ≈ 0` and marks light strokes as ink. **The two produce
-identical ink maps**, so the rest of the pipeline never learns which kind of page
-it is looking at.
+A white page marks dark strokes as ink; a black page marks light strokes as
+ink. A solid coloured page also works, including when its panels have nearly
+the same luminance but a different hue. **All three produce a useful binary
+map.**
 
 ### The recursive X-Y cut
 
@@ -374,7 +374,7 @@ Panels+ plugin folder. Every line this plugin emits starts with the prefix
 for more on the log format and where `crash.log` lives on each platform.
 
 ```
-[Panels+] page bitmap 74ms (480x720 bb8 bg=12 inverted ink=38%)
+[Panels+] page bitmap 74ms (480x720 rgb24 bg=12,12,12 inverted ink=38%)
 [Panels+] segment 48ms (6 panels)
 ```
 

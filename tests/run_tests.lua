@@ -22,6 +22,7 @@ local spec_modules = {
     "tests.spec.ocrdebug_report_spec",
     "tests.spec.geometry_spec",
     "tests.spec.wordfinder_spec",
+    "tests.spec.pagebitmap_spec",
     "tests.spec.segmenter_spec",
 }
 

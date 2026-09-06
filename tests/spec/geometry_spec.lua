@@ -43,6 +43,25 @@ describe("Geometry.sortReadingOrder comic mode", function()
 
         assert.equals("left,right", orderedIDs(panels))
     end)
+
+    it("reads a left-hand stack before its tall trailing panel", function()
+        -- The tall right-hand panel starts alongside panel 3 but spans the
+        -- three rows of panels to its left. Comic flow must complete that
+        -- left-hand stack before returning to the right.
+        local panels = {
+            panel("4", 170, 120, 150, 380),
+            panel("6", 0, 330, 70, 100),
+            panel("2", 170, 0, 150, 100),
+            panel("1", 0, 0, 150, 100),
+            panel("7", 80, 330, 70, 100),
+            panel("5", 0, 250, 150, 60),
+            panel("3", 0, 120, 150, 110),
+        }
+
+        Geometry.sortReadingOrder(panels, "comic")
+
+        assert.equals("1,2,3,5,6,7,4", orderedIDs(panels))
+    end)
 end)
 
 describe("Geometry.sortReadingOrder manga mode", function()

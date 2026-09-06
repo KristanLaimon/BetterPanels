@@ -30,6 +30,7 @@ local PageBitmap = {}
 --- @field scale_x number Native units per map cell, horizontally.
 --- @field scale_y number Native units per map cell, vertically.
 --- @field background integer Estimated page background luminance (0-255).
+--- @field background_color table<{r:integer, g:integer, b:integer}> Estimated page background RGB colour.
 --- @field inverted boolean Whether the page background is dark.
 --- @field border ffi.cdata*|nil `uint8_t[w*h]` of 0/1 border-stroke candidate flags, comic mode only.
 
@@ -89,39 +90,42 @@ local function renderSmall(document, page, target_width)
     return tile.bb, native
 end
 
---- Return a plain 8bpp greyscale buffer to sample from.
+--- Return a buffer whose raw pixels can be sampled without applying a rotation
+--- or inverse transform in Lua.
 ---
---- Only luminance matters here, and one C-side conversion is far cheaper than
---- per-pixel colour conversion in Lua across a whole page. Rotated or inverted
---- buffers are converted too, since the raw byte path below ignores both flags.
+--- Keep colour buffers in colour. A solid coloured page background can share a
+--- luminance with its panels, and reducing both to greyscale before comparing
+--- them makes that gutter disappear. Rotated or inverted buffers are copied so
+--- the raw fast paths below see their displayed pixels.
 ---
 --- @param bb table Rendered blitbuffer.
 --- @return table bb Buffer to sample.
 --- @return table|nil owned Buffer the caller must free, if one was allocated.
-local function toGreyscale(bb)
-    if bb:getType() == Blitbuffer.TYPE_BB8 and bb:getRotation() == 0 and bb:getInverse() == 0 then
+local function normalizeForSampling(bb)
+    if bb:getRotation() == 0 and bb:getInverse() == 0 then
         return bb, nil
     end
 
-    local ok, grey = pcall(function()
-        local target = Blitbuffer.new(bb.w, bb.h, Blitbuffer.TYPE_BB8)
+    local ok, normalized = pcall(function()
+        local target_type = bb:isRGB() and Blitbuffer.TYPE_BBRGB32 or Blitbuffer.TYPE_BB8
+        local target = Blitbuffer.new(bb.w, bb.h, target_type)
         target:blitFrom(bb, 0, 0, 0, 0, bb.w, bb.h)
         return target
     end)
-    if ok and grey then
-        return grey, grey
+    if ok and normalized then
+        return normalized, normalized
     end
     return bb, nil
 end
 
---- Build the fastest available luminance accessor for a blitbuffer.
+--- Build the fastest available RGB accessor for a blitbuffer.
 ---
---- Reading 8bpp bytes directly avoids a Lua object allocation per pixel, which
---- matters across ~150k of them. The generic accessor stays as a fallback in
---- case the raw pointer is unavailable.
+--- Reading raw pixels directly avoids a Lua colour object allocation per pixel,
+--- which matters across ~150k of them. The generic accessor stays as a fallback
+--- in case the raw pointer is unavailable.
 ---
 --- @param bb table Buffer to sample.
---- @return fun(x:integer, y:integer):integer sample Luminance accessor.
+--- @return fun(x:integer, y:integer):integer,integer,integer sample RGB accessor.
 --- @return string kind Accessor name, for timing logs.
 local function makeSampler(bb)
     if bb:getType() == Blitbuffer.TYPE_BB8 then
@@ -129,38 +133,96 @@ local function makeSampler(bb)
         if ok and data ~= nil then
             local stride = tonumber(bb.stride)
             return function(x, y)
-                return data[y * stride + x]
+                local value = data[y * stride + x]
+                return value, value, value
             end, "bb8"
         end
     end
 
+    local pixel_stride = tonumber(bb.pixel_stride)
+    if bb:getType() == Blitbuffer.TYPE_BBRGB24 then
+        local ok, data = pcall(ffi.cast, "ColorRGB24 *", bb.data)
+        if ok and data ~= nil then
+            return function(x, y)
+                local pixel = data[y * pixel_stride + x]
+                return pixel.r, pixel.g, pixel.b
+            end, "rgb24"
+        end
+    elseif bb:getType() == Blitbuffer.TYPE_BBRGB32 then
+        local ok, data = pcall(ffi.cast, "ColorRGB32 *", bb.data)
+        if ok and data ~= nil then
+            return function(x, y)
+                local pixel = data[y * pixel_stride + x]
+                return pixel.r, pixel.g, pixel.b
+            end, "rgb32"
+        end
+    elseif bb:getType() == Blitbuffer.TYPE_BBRGB16 then
+        local ok, data = pcall(ffi.cast, "ColorRGB16 *", bb.data)
+        if ok and data ~= nil then
+            return function(x, y)
+                local value = tonumber(data[y * pixel_stride + x].v)
+                local r = math.floor(value / 2048)
+                local g = math.floor(value / 32) % 64
+                local b = value % 32
+                return r * 8 + math.floor(r / 4), g * 4 + math.floor(g / 16), b * 8 + math.floor(b / 4)
+            end, "rgb16"
+        end
+    end
+
     return function(x, y)
-        return bb:getPixel(x, y):getColor8().a
+        local color = bb:getPixel(x, y):getColorRGB24()
+        return color.r, color.g, color.b
     end, "generic"
 end
 
---- Estimate the page background luminance from its outer border.
+--- Return an RGB colour's luminance using KOReader's own ColorRGB conversion.
+---
+--- @param r integer
+--- @param g integer
+--- @param b integer
+--- @return integer luminance
+local function luminance(r, g, b)
+    return math.floor((4898 * r + 9618 * g + 1869 * b) / 16384)
+end
+
+--- Return the greatest per-channel difference between two RGB colours.
+---
+--- This is deliberately equivalent to the old absolute luminance difference
+--- for greyscale pixels, while also seeing hues that have almost the same
+--- luminance as the background.
+local function colourDistance(r, g, b, background_r, background_g, background_b)
+    local dr = math.abs(r - background_r)
+    local dg = math.abs(g - background_g)
+    local db = math.abs(b - background_b)
+    return math.max(dr, dg, db)
+end
+
+--- Estimate the page background colour from its outer border.
 ---
 --- The border of a comic page is the page's own paper (or its inked backdrop),
---- never panel content, so its median luminance is a reliable background
---- reference for both normal and inverted artwork.
+--- never panel content, so its per-channel median is a reliable background
+--- reference for normal, inverted, and coloured artwork.
 ---
---- @param sample fun(x:integer, y:integer):integer Luminance accessor.
+--- @param sample fun(x:integer, y:integer):integer,integer,integer RGB accessor.
 --- @param w integer Source width.
 --- @param h integer Source height.
---- @return integer background Median border luminance (0-255).
+--- @return integer r Median border red channel (0-255).
+--- @return integer g Median border green channel (0-255).
+--- @return integer b Median border blue channel (0-255).
 local function estimateBackground(sample, w, h)
-    local histogram = {}
+    local red, green, blue = {}, {}, {}
     for value = 0, 255 do
-        histogram[value] = 0
+        red[value], green[value], blue[value] = 0, 0, 0
     end
 
     local ring = math.max(1, math.floor(math.min(w, h) * 0.01))
     local total = 0
 
     local function tally(x, y)
-        local value = sample(x, y)
-        histogram[value] = histogram[value] + 1
+        local r, g, b = sample(x, y)
+        red[r] = red[r] + 1
+        green[g] = green[g] + 1
+        blue[b] = blue[b] + 1
         total = total + 1
     end
 
@@ -176,17 +238,21 @@ local function estimateBackground(sample, w, h)
     end
 
     if total == 0 then
+        return 255, 255, 255
+    end
+
+    local function median(histogram)
+        local half, seen = total / 2, 0
+        for value = 0, 255 do
+            seen = seen + histogram[value]
+            if seen >= half then
+                return value
+            end
+        end
         return 255
     end
 
-    local half, seen = total / 2, 0
-    for value = 0, 255 do
-        seen = seen + histogram[value]
-        if seen >= half then
-            return value
-        end
-    end
-    return 255
+    return median(red), median(green), median(blue)
 end
 
 --- Build a page's binary ink map.
@@ -229,7 +295,7 @@ function PageBitmap.build(document, page, settings)
         end
 
         local work
-        work, owned = toGreyscale(bb)
+        work, owned = normalizeForSampling(bb)
         local src_w, src_h = work.w, work.h
         local sample, kind = makeSampler(work)
 
@@ -243,7 +309,8 @@ function PageBitmap.build(document, page, settings)
             return
         end
 
-        local background = estimateBackground(sample, src_w, src_h)
+        local background_r, background_g, background_b = estimateBackground(sample, src_w, src_h)
+        local background = luminance(background_r, background_g, background_b)
         local data = ffi.new("uint8_t[?]", w * h)
         local border = detect_borders and ffi.new("uint8_t[?]", w * h) or nil
         local ink = 0
@@ -254,17 +321,14 @@ function PageBitmap.build(document, page, settings)
                 local src_y = y * step
                 local row = y * w
                 for x = 0, w - 1 do
-                    local value = sample(x * step, src_y)
-                    local delta = value - background
-                    if delta < 0 then
-                        delta = -delta
-                    end
+                    local r, g, b = sample(x * step, src_y)
+                    local delta = colourDistance(r, g, b, background_r, background_g, background_b)
                     local idx = row + x
                     if delta > ink_delta then
                         data[idx] = 1
                         ink = ink + 1
                     end
-                    if value <= border_luminance_max then
+                    if luminance(r, g, b) <= border_luminance_max then
                         border[idx] = 1
                         border_cells = border_cells + 1
                     end
@@ -275,11 +339,8 @@ function PageBitmap.build(document, page, settings)
                 local src_y = y * step
                 local row = y * w
                 for x = 0, w - 1 do
-                    local value = sample(x * step, src_y)
-                    local delta = value - background
-                    if delta < 0 then
-                        delta = -delta
-                    end
+                    local r, g, b = sample(x * step, src_y)
+                    local delta = colourDistance(r, g, b, background_r, background_g, background_b)
                     if delta > ink_delta then
                         data[row + x] = 1
                         ink = ink + 1
@@ -299,16 +360,19 @@ function PageBitmap.build(document, page, settings)
             scale_x = native.w / w,
             scale_y = native.h / h,
             background = background,
+            background_color = { r = background_r, g = background_g, b = background_b },
             inverted = background < 128,
         }
         local free_mb = Timing.enabled and Timing.freeMB() or nil
         stop(
             string.format(
-                "%dx%d %s bg=%d%s ink=%d%%%s%s",
+                "%dx%d %s bg=%d,%d,%d%s ink=%d%%%s%s",
                 w,
                 h,
                 kind,
-                background,
+                background_r,
+                background_g,
+                background_b,
                 map.inverted and " inverted" or "",
                 math.floor(ink * 100 / (w * h)),
                 border and string.format(" border=%d%%", math.floor(border_cells * 100 / (w * h))) or "",
@@ -317,7 +381,7 @@ function PageBitmap.build(document, page, settings)
         )
     end)
 
-    -- The greyscale copy, if one was made, is ours; the rendered tile is not.
+    -- The normalized copy, if one was made, is ours; the rendered tile is not.
     if owned then
         pcall(owned.free, owned)
     end
@@ -328,5 +392,10 @@ function PageBitmap.build(document, page, settings)
     end
     return map, reason
 end
+
+-- Exposed for the small, render-free colour-map specs.
+PageBitmap._estimateBackground = estimateBackground
+PageBitmap._colourDistance = colourDistance
+PageBitmap._luminance = luminance
 
 return PageBitmap

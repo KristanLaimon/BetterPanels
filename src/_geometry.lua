@@ -60,6 +60,11 @@ end
 --- lower panel before the upper one. That breaks both left-to-right comic and
 --- right-to-left manga flow.
 ---
+--- Comic layouts can also place a tall trailing panel beside a vertical stack
+--- of later panels. That panel shares a top edge with the first panel in the
+--- stack, but its position at the right edge means the stack is read first:
+--- left-to-right flow enters the stack and only then returns to the tall panel.
+---
 --- @param panels PPPanel[] Unordered panel rectangles.
 --- @param mode PPReadingMode Reading order mode.
 --- @return PPPanel[] panels The same table, sorted in place.
@@ -115,8 +120,56 @@ local function sortTopAlignedRows(panels, mode)
             end
             return ax > bx
         end)
-        for _, item in ipairs(row.items) do
-            table.insert(sorted, item.rect)
+    end
+
+    if mode == "comic" then
+        -- A trailing panel which overlaps later panels entirely to its left is
+        -- the closing panel of a nested left-hand stack. Hold it until the last
+        -- such row, preserving 1,2,3,5,6,7,4 rather than 1,2,3,4,5,6,7.
+        local deferred = {}
+
+        for row_index, row in ipairs(rows) do
+            for item_index, item in ipairs(row.items) do
+                local rect = item.rect
+                local defer_until = row_index
+                local bottom = (rect.y or 0) + math.max(1, rect.h or 0)
+
+                if item_index > 1 then
+                    for later_index = row_index + 1, #rows do
+                        local later_row = rows[later_index]
+                        if later_row.top >= bottom then
+                            break
+                        end
+                        for _, later_item in ipairs(later_row.items) do
+                            local later_rect = later_item.rect
+                            local later_right = (later_rect.x or 0) + math.max(1, later_rect.w or 0)
+                            if later_right <= (rect.x or 0) then
+                                defer_until = later_index
+                                break
+                            end
+                        end
+                    end
+                end
+
+                if defer_until > row_index then
+                    deferred[defer_until] = deferred[defer_until] or {}
+                    table.insert(deferred[defer_until], item)
+                else
+                    table.insert(sorted, rect)
+                end
+            end
+
+            if deferred[row_index] then
+                for _, item in ipairs(deferred[row_index]) do
+                    table.insert(sorted, item.rect)
+                end
+            end
+        end
+    else
+        for _, row in ipairs(rows) do
+            for _, item in ipairs(row.items) do
+                table.insert(sorted, item.rect)
+            end
         end
     end
 
