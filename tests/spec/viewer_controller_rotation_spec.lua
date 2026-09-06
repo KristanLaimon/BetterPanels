@@ -25,7 +25,7 @@ describe("ViewerController device rotation across page boundaries", function()
 
     it("restores the selected rotation when GotoPage resets it", function()
         resetScreen()
-        Screen:setRotationMode(1)
+        Screen:setRotationMode(2)
         local broadcast_spy, rotation_spy = spy(), spy()
         UIManager.broadcastEvent = function(_, event)
             broadcast_spy(event)
@@ -57,13 +57,13 @@ describe("ViewerController device rotation across page boundaries", function()
             next_page = 2,
             panels = { { x = 0, y = 0, w = 1, h = 1 } },
             start_idx = 1,
-        }, 1)
+        })
 
         assert.is_true(result)
-        assert.equals(1, Screen:getRotationMode())
+        assert.equals(2, Screen:getRotationMode())
         assert.equals(1, broadcast_spy:callCount())
         assert.equals("SetRotationMode", broadcast_spy:lastCall()[1].name)
-        assert.equals(1, broadcast_spy:lastCall()[1].args[1])
+        assert.equals(2, broadcast_spy:lastCall()[1].args[1])
         assert.equals(1, rotation_spy:callCount())
         assert.is_true(shown_spy:called())
         restoreUIManager()

@@ -256,6 +256,17 @@ function PanelViewer:runReaderGestureHandler(handler, ges)
     if not reader_ui then
         return false
     end
+    if not reader_ui.document then
+        -- A document can be closed while this fullscreen viewer is still on
+        -- the window stack (for example through a reader-menu action). Its
+        -- cached touch zones then outlive the ReaderUI document they target.
+        -- Swallow this stale input and dismiss the viewer rather than letting
+        -- a KOReader menu handler dereference the missing document.
+        if self:isOpen() then
+            self:onClose()
+        end
+        return true
+    end
 
     local page_before = reader_ui.page
         or (reader_ui.paging and reader_ui.paging.current_page)
@@ -291,7 +302,13 @@ function PanelViewer:runReaderGestureHandler(handler, ges)
     UIManager.sendEvent = original_send_event
     if not ok then
         logger.warn("[Panels+] reader touch zone / gesture handler failed:", tostring(handled))
-        error(handled)
+        -- This is reader-owned code, not a Panels+ operation. Keeping the
+        -- stale overlay alive (or rethrowing its error) turns a failed menu
+        -- action into a KOReader-wide crash. Dismiss the viewer instead.
+        if self:isOpen() then
+            self:onClose()
+        end
+        return true
     end
 
     local page_after = reader_ui.page
@@ -330,6 +347,13 @@ function PanelViewer:dispatchReaderGesture(ges)
     local zones = reader_ui and reader_ui._ordered_touch_zones
     if not gestures or not zones then
         return false
+    end
+    if not reader_ui.document then
+        -- Do not forward an old reader-menu zone after its document closed.
+        if self:isOpen() then
+            self:onClose()
+        end
+        return true
     end
 
     for _, zone in ipairs(zones) do

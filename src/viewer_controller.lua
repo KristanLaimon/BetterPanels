@@ -659,9 +659,13 @@ end
 --- @param direction PPBoundaryDirection `"next"` or `"previous"`.
 --- @param current_viewer PanelViewer Active panel viewer being replaced.
 --- @param resolved PPBoundaryResolution Result of a prior `resolveBoundaryTarget` call.
---- @param rotation_mode integer|nil Device rotation active before crossing the boundary.
 --- @return boolean|PanelViewer result Whatever `showPanelViewerForPage` returns.
-function ViewerController:commitBoundaryTransition(direction, current_viewer, resolved, rotation_mode)
+function ViewerController:commitBoundaryTransition(direction, current_viewer, resolved)
+    -- Smooth crossings arrive here without going through
+    -- `onPanelViewerBoundary`. Sample immediately before `GotoPage` so both
+    -- paths preserve the user's current device orientation, including any
+    -- change made while a deferred panel lookup was running.
+    local rotation_mode = Screen:getRotationMode()
     Timing.log(
         "commitBoundaryTransition: direction=%s page=%d -> %d target_panel=%d",
         direction,
@@ -685,7 +689,6 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
         return true
     end
     current_viewer._panels_plus_boundary_pending = true
-    local rotation_mode = Screen:getRotationMode()
 
     local next_page
     if direction == "next" then
@@ -706,13 +709,14 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
 
     local resolved = self:resolveBoundaryTarget(direction, current_viewer)
     if resolved then
-        return self:commitBoundaryTransition(direction, current_viewer, resolved, rotation_mode)
+        return self:commitBoundaryTransition(direction, current_viewer, resolved)
     end
 
     local cached_panels = self:getCachedPanels(next_page)
     if cached_panels then
         -- cached, but empty: nothing detected on the adjacent page.
         current_viewer:onClose()
+        local rotation_mode = Screen:getRotationMode()
         self.ui:handleEvent(Event:new("GotoPage", next_page))
         self:restoreDeviceRotation(rotation_mode)
         self:preloadNextPanels(next_page)
@@ -725,6 +729,7 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
         end
         local loaded_panels = self:collectPanels(next_page)
         if #loaded_panels > 0 then
+            local rotation_mode = Screen:getRotationMode()
             self.ui:handleEvent(Event:new("GotoPage", next_page))
             UIManager:close(current_viewer)
             self:restoreDeviceRotation(rotation_mode)
@@ -732,6 +737,7 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
             self:showPanelViewerForPage(next_page, loaded_panels, start_idx)
         else
             current_viewer:onClose()
+            local rotation_mode = Screen:getRotationMode()
             self.ui:handleEvent(Event:new("GotoPage", next_page))
             self:restoreDeviceRotation(rotation_mode)
             self:preloadNextPanels(next_page)
