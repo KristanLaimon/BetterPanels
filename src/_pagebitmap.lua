@@ -135,7 +135,8 @@ local function makeSampler(bb)
             return function(x, y)
                 local value = data[y * stride + x]
                 return value, value, value
-            end, "bb8"
+            end,
+                "bb8"
         end
     end
 
@@ -146,7 +147,8 @@ local function makeSampler(bb)
             return function(x, y)
                 local pixel = data[y * pixel_stride + x]
                 return pixel.r, pixel.g, pixel.b
-            end, "rgb24"
+            end,
+                "rgb24"
         end
     elseif bb:getType() == Blitbuffer.TYPE_BBRGB32 then
         local ok, data = pcall(ffi.cast, "ColorRGB32 *", bb.data)
@@ -154,7 +156,8 @@ local function makeSampler(bb)
             return function(x, y)
                 local pixel = data[y * pixel_stride + x]
                 return pixel.r, pixel.g, pixel.b
-            end, "rgb32"
+            end,
+                "rgb32"
         end
     elseif bb:getType() == Blitbuffer.TYPE_BBRGB16 then
         local ok, data = pcall(ffi.cast, "ColorRGB16 *", bb.data)
@@ -165,14 +168,16 @@ local function makeSampler(bb)
                 local g = math.floor(value / 32) % 64
                 local b = value % 32
                 return r * 8 + math.floor(r / 4), g * 4 + math.floor(g / 16), b * 8 + math.floor(b / 4)
-            end, "rgb16"
+            end,
+                "rgb16"
         end
     end
 
     return function(x, y)
         local color = bb:getPixel(x, y):getColorRGB24()
         return color.r, color.g, color.b
-    end, "generic"
+    end,
+        "generic"
 end
 
 --- Return an RGB colour's luminance using KOReader's own ColorRGB conversion.

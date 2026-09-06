@@ -180,11 +180,7 @@ local function findWidestGutter(projection, from, to, span, ink_ratio, min_lengt
                 -- usual proportional tolerance is useful for multi-cell
                 -- gutters (which can pick up a halftone speck), but would let
                 -- a one-cell artwork gap split a Comic panel in two.
-                if
-                    length >= min_length
-                    and (length > 1 or projection[run_start] == 0)
-                    and length > best_length
-                then
+                if length >= min_length and (length > 1 or projection[run_start] == 0) and length > best_length then
                     best_start, best_stop, best_length = run_start, index - 1, length
                 end
             end
@@ -663,12 +659,8 @@ function Segmenter.segment(map, settings)
         rows = ffi.new("int32_t[?]", map.h),
         cols = ffi.new("int32_t[?]", map.w),
         ink_ratio = settings.segment_gutter_ink_ratio or defaults.segment_gutter_ink_ratio,
-        min_gutter = settings.mode == "comic"
-                and 1
-            or math.max(
-                2,
-                math.floor(min_dimension * (settings.segment_gutter_ratio or defaults.segment_gutter_ratio))
-            ),
+        min_gutter = settings.mode == "comic" and 1
+            or math.max(2, math.floor(min_dimension * (settings.segment_gutter_ratio or defaults.segment_gutter_ratio))),
         min_side = math.max(
             4,
             math.floor(min_dimension * (settings.segment_min_panel_side or defaults.segment_min_panel_side))
