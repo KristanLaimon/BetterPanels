@@ -1,13 +1,10 @@
 local Blitbuffer = require("ffi/blitbuffer")
 local Event = require("ui/event")
 local Geometry = require("src._geometry")
-local Memory = require("src._memory")
-local PageBitmap = require("src._pagebitmap")
 local PanelViewport = require("src._panelviewport")
 local PanelViewer = require("src._panelviewer")
 local RenderImage = require("ui/renderimage")
 local NativeDetector = require("src._nativedetector")
-local Segmenter = require("src._segmenter")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
 local UIManager = require("ui/uimanager")
@@ -202,70 +199,13 @@ local function startIndex(panels, point)
     return best_idx
 end
 
---- Copy settings for an image-only outline pass. The higher-resolution map
---- and drawn-border search cost more memory, so this table is only created
---- after a user has opened an EPUB/KEPUB/MOBI image and never reaches the normal
---- document panel pipeline.
-local function outlineSettings(settings)
-    local outline = {}
-    for key, value in pairs(settings) do
-        outline[key] = value
-    end
-    outline.segment_target_width = math.min(960, math.max(720, (settings.segment_target_width or 480) * 2))
-    outline.segment_border_split = true
-    -- Border strokes are useful in manga as well as western comics here. The
-    -- caller still sorts the result using the reader's requested mode.
-    outline.mode = "comic"
-    return outline
-end
-
---- Run an image-space detector. `fast` is the normal low-memory gutter pass;
---- `exact` uses KOReader's K2PDFOpt/Leptonica panel routine on the extracted
---- bitmap; `auto` follows the fixed-layout policy of Fast then Native. The
---- existing image-space outline pass remains a safe fallback when KOPT is not
---- available or rejects the image.
+--- Detect panels in an image using Deep mode (NativeDetector).
 local function detectPanels(image, settings)
-    local detector = settings.embedded_detector or "auto"
-
-    local function detectWith(detector_settings)
-        local map, reason = PageBitmap.buildFromBlitbuffer(image, detector_settings)
-        if not map then
-            return nil, reason
-        end
-        local panels = Segmenter.segment(map, detector_settings)
-        local accepted, rejection = Segmenter.accept(panels, map, detector_settings)
-        if not accepted or #panels == 0 then
-            return nil, rejection
-        end
-        return panels
-    end
-
-    if detector ~= "exact" then
-        local panels, reason = detectWith(settings)
-        if panels then
-            return panels, "fast"
-        end
-        if detector == "fast" then
-            return nil, reason
-        end
-    end
-
     local native = NativeDetector.collectFromBlitbuffer(image, settings)
     if #native > 0 then
         return native, "exact"
     end
-
-    -- Outline is optional recovery work. Do not allocate its larger map after
-    -- Deep already declined for lack of room on a low-memory reader.
-    local outline_floor = settings.prerender_min_free_bytes or Settings.defaults.prerender_min_free_bytes
-    if not Memory.hasHeadroom(outline_floor) then
-        return nil, "low memory"
-    end
-    local panels, reason = detectWith(outlineSettings(settings))
-    if panels then
-        return panels, "exact"
-    end
-    return nil, reason
+    return nil, "no panels found"
 end
 
 --- Open an already-extracted image. This takes ownership of `image` on
@@ -319,9 +259,7 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         crop_mode = self.settings.crop_mode,
         margin_ratio = self.settings.panel_margin_ratio,
         bleed_ratio = self.settings.panel_bleed_ratio,
-        -- Display the selected strategy (Smart) rather than the internal
-        -- first pass it happened to accept (Quick).
-        detector = self.settings.embedded_detector or "auto",
+        detector = "exact",
         invert_swipe = self.settings.invert_swipe == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
@@ -410,11 +348,6 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
         more_config_callback = function(current_viewer)
             return self:showMoreConfigMenu(current_viewer)
-        end,
-        detector_cycle_callback = function(current_viewer)
-            local order = { auto = "fast", fast = "exact", exact = "auto" }
-            self:setEmbeddedDetector(order[self.settings.embedded_detector or "auto"] or "auto")
-            return self:reopenEmbeddedImagePanels(current_viewer)
         end,
     })
     if options.replace_viewer then

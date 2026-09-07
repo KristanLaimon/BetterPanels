@@ -109,10 +109,6 @@ end
 --- @param mode PPReadingMode Requested mode; anything except `"comic"` maps to `"manga"`.
 function PanelsPlus:setMode(mode)
     self.settings.mode = mode == "comic" and "comic" or "manga"
-    if self.settings.mode == "comic" and self.settings.detector == "exact" then
-        self.settings.detector = "auto"
-        Timing.log("detector -> auto (forced by comic mode, was exact)")
-    end
     Timing.log("mode -> " .. self.settings.mode)
     self:saveSettings()
 end
@@ -243,9 +239,9 @@ end
 --- back to a detector already used on this page returns instantly instead
 --- of paying for another detection pass.
 ---
---- @param detector PPDetector Requested detector; anything unknown maps to `"auto"`.
-function PanelsPlus:setDetector(detector)
-    self.settings.detector = (detector == "fast" or detector == "exact") and detector or "auto"
+--- @param detector PPDetector Requested detector.
+function PanelsPlus:setDetector(_detector)
+    self.settings.detector = "exact"
     Timing.log(
         "detector -> " .. self.settings.detector .. string.format(" (cache: %d pages)", #(self.panel_cache_order or {}))
     )
@@ -255,9 +251,9 @@ end
 --- Choose the bitmap-only detector used for embedded EPUB/KEPUB/MOBI images.
 --- This never changes the fixed-layout document detector, keeping the extra
 --- reflow-image work completely out of CBZ/CBR/PDF reads.
---- @param detector PPDetector Requested detector; anything unknown maps to `"auto"`.
-function PanelsPlus:setEmbeddedDetector(detector)
-    self.settings.embedded_detector = (detector == "fast" or detector == "exact") and detector or "auto"
+--- @param detector PPDetector Requested detector.
+function PanelsPlus:setEmbeddedDetector(_detector)
+    self.settings.embedded_detector = "exact"
     Timing.log("embedded detector -> " .. self.settings.embedded_detector)
     self:saveSettings()
 end

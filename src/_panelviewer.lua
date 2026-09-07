@@ -91,7 +91,7 @@ local PanelViewer = ImageViewer:extend({
     margin_ratio = 0.12,
     bleed_ratio = 0.08,
     panel_is_full_page = nil,
-    detector = "auto",
+    detector = "exact",
     invert_swipe = false,
     tap_navigation = false,
     swipe_navigation = true,
@@ -427,16 +427,16 @@ end
 
 --- Return which horizontal swipe direction advances to the next panel.
 ---
---- Comic (left-to-right) advances by turning forward from right-to-left (west).
---- Manga (right-to-left) advances by turning forward from left-to-right (east).
+--- Comic (left-to-right) advances by swiping left-to-right (east), matching reading flow.
+--- Manga (right-to-left) advances by swiping right-to-left (west), matching reading flow.
 ---
 --- @return '"west"'|'"east"' direction Swipe direction treated as next.
 function PanelViewer:getNextSwipeDirection()
     local direction
     if self.reading_mode == "comic" then
-        direction = "west"
-    else
         direction = "east"
+    else
+        direction = "west"
     end
     if self.invert_swipe then
         return direction == "west" and "east" or "west"
@@ -2298,20 +2298,11 @@ function PanelViewer:onSetImageRotation(direction)
     self:update()
 end
 
---- Return the button label for the detector currently in use.
----
---- Named for what each mode gives the reader rather than for how it works:
---- "Quick" always uses the fast detector, "Deep" always uses KOReader's
---- slower but more literal one, and "Smart" runs Quick and falls back to Deep.
+--- Return the label for the detector currently in use.
 ---
 --- @return string text Localized detector label.
 function PanelViewer:getDetectorText()
-    if self.detector == "fast" then
-        return _("Quick mode")
-    elseif self.detector == "exact" then
-        return _("Deep mode")
-    end
-    return _("Smart Mode")
+    return _("Deep mode")
 end
 
 --- Rebuild the ImageViewer button table from current mode/crop state.
@@ -2408,15 +2399,6 @@ function PanelViewer:replaceButtonTable()
                 callback = function()
                     if self.more_config_callback then
                         self.more_config_callback(self)
-                    end
-                end,
-            },
-            {
-                id = "detector",
-                text = self:getDetectorText(),
-                callback = function()
-                    if self.detector_cycle_callback then
-                        self.detector_cycle_callback(self)
                     end
                 end,
             },

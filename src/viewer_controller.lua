@@ -248,44 +248,8 @@ function ViewerController:setViewerImageRotation(viewer, value)
     return true
 end
 
---- Cycle Auto -> Gutter -> Outline from an open viewer and re-detect the page.
----
---- Changing detector changes the panel list, so the viewer is rebuilt. The
---- panel being read is kept by matching its centre against the new list, which
---- is the same trick the reading-order toggle uses.
----
---- @param viewer PanelViewer Active panel viewer instance.
---- @return boolean handled Always true for viewer callback dispatch.
-function ViewerController:cycleViewerDetector(viewer)
-    -- Deep mode ("exact") only recognizes white gutters and gives up on dark
-    -- backgrounds, which comic pages routinely have; main.lua:setMode() and
-    -- the main menu both keep comic mode off "exact" for that reason, so the
-    -- in-viewer cycle must honor the same invariant instead of offering it.
-    local order = self.settings.mode == "comic" and { auto = "fast", fast = "auto", exact = "auto" }
-        or { auto = "fast", fast = "exact", exact = "auto" }
-    local next_detector = order[self:getDetector()] or "fast"
-    Timing.memory("detector cycle -> " .. next_detector)
-    self:setDetector(next_detector)
-
-    local current_rect = viewer.panels and viewer.panels[viewer._images_list_cur]
-    local panels = self:collectPanels(viewer.page)
-    if #panels == 0 then
-        viewer.detector = self.settings.detector
-        viewer:replaceButtonTable()
-        viewer:update()
-        return true
-    end
-
-    local start_idx = 1
-    if current_rect then
-        start_idx = PanelCollector.startIndex(panels, {
-            x = (current_rect.x or 0) + (current_rect.w or 0) / 2,
-            y = (current_rect.y or 0) + (current_rect.h or 0) / 2,
-        })
-    end
-
-    UIManager:close(viewer)
-    return self:showPanelViewerForPage(viewer.page, panels, start_idx, { buttons_visible = true })
+function ViewerController:cycleViewerDetector(_viewer)
+    return true
 end
 
 --- Toggle progress bar visibility from an open viewer.
@@ -537,7 +501,7 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         crop_mode = self.settings.crop_mode,
         margin_ratio = self.settings.panel_margin_ratio,
         bleed_ratio = self.settings.panel_bleed_ratio,
-        detector = self:getDetector(),
+        detector = "exact",
         invert_swipe = self.settings.invert_swipe == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
@@ -590,9 +554,6 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         end,
         nav_boundary_commit_callback = function(current_viewer, direction, resolved)
             return self:commitBoundaryTransition(direction, current_viewer, resolved)
-        end,
-        detector_cycle_callback = function(current_viewer)
-            return self:cycleViewerDetector(current_viewer)
         end,
         device_rotate_callback = function(current_viewer, mode)
             return self:setDeviceRotation(current_viewer, mode)

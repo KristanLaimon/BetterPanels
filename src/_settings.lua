@@ -24,11 +24,11 @@ local Settings = {
         nav_transition_duration = 0.4,
         nav_transition_cross_page = true,
         nav_transition_frames = 8,
-        detector = "auto",
+        detector = "exact",
         -- Reflow-image detection has an independent preference, but its
         -- "exact" choice uses the same K2PDFOpt panel routine as fixed pages
         -- after adapting the extracted bitmap into a KOPT source.
-        embedded_detector = "auto",
+        embedded_detector = "exact",
         -- Separate from fixed-layout navigation: embedded-image transitions
         -- use an extracted-bitmap renderer and never document page rendering.
         embedded_nav_transition_mode = "classic",
@@ -82,10 +82,12 @@ local Settings = {
 function Settings.withDefaults(settings)
     settings = settings or {}
     local performance_profile_version = settings.performance_profile_version or 0
-    -- The precise detector was called "native" before it was surfaced in the
-    -- viewer, where it reads as "Outline".
-    if settings.detector == "native" then
+    -- Deep mode ("exact") is the sole detector mode.
+    if settings.detector ~= "exact" then
         settings.detector = "exact"
+    end
+    if settings.embedded_detector ~= "exact" then
+        settings.embedded_detector = "exact"
     end
     -- "debug_timing" was renamed "debug_mode" once it started covering memory
     -- logging too, not just pipeline timings.

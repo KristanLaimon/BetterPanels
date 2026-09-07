@@ -5,18 +5,11 @@ local _ = require("gettext")
 --- @class PPMenuMethods
 local Menu = {}
 
---- Return the active detector, defaulting unset or unknown values to automatic.
+--- Return the active detector (Deep mode / exact).
 ---
 --- @return PPDetector detector Current detector selection.
 function Menu:getDetector()
-    local detector = self.settings.detector
-    if detector == "fast" or detector == "exact" then
-        return detector
-    end
-    if detector == "native" then
-        return "exact" -- pre-rename value, in case migration has not run yet
-    end
-    return "auto"
+    return "exact"
 end
 
 --- Return the main-menu label for the current reading mode.
@@ -94,69 +87,7 @@ function Menu:addToMainMenu(menu_items)
                 ),
                 separator = true,
             },
-            {
-                text = _("Panel detection"),
-                sub_item_table = {
-                    {
-                        text = _("Smart Mode"),
-                        checked_func = function()
-                            return self:getDetector() == "auto"
-                        end,
-                        radio = true,
-                        callback = function()
-                            self:setDetector("auto")
-                        end,
-                        help_text = _(
-                            "Use fast detection, falling back to exact detection on layouts it cannot split. Recommended."
-                        ),
-                    },
-                    {
-                        text = _("Quick mode"),
-                        checked_func = function()
-                            return self:getDetector() == "fast"
-                        end,
-                        radio = true,
-                        callback = function()
-                            self:setDetector("fast")
-                        end,
-                        help_text = _(
-                            "Always detect panels from a reduced-size page. Quickest, and the only mode that works on pages with a dark background, but it cannot split interlocking panel layouts."
-                        ),
-                    },
-                    {
-                        text = _("Deep mode"),
-                        checked_func = function()
-                            return self:getDetector() == "exact"
-                        end,
-                        enabled_func = function()
-                            return self.settings.mode ~= "comic"
-                        end,
-                        radio = true,
-                        callback = function()
-                            self:setDetector("exact")
-                        end,
-                        help_text = _(
-                            "Always use KOReader's own panel detector. Slower and unable to find panels on pages with a dark background, but more literal about panel edges. Unavailable in comic mode, where dark backgrounds are common."
-                        ),
-                        separator = true,
-                    },
-                    {
-                        text = _("Split on drawn panel borders (experimental)"),
-                        checked_func = function()
-                            return self.settings.segment_border_split == true
-                        end,
-                        enabled_func = function()
-                            return self.settings.mode == "comic"
-                        end,
-                        callback = function()
-                            self:setBorderSplit(self.settings.segment_border_split ~= true)
-                        end,
-                        help_text = _(
-                            "Comic mode only. Split panels that touch edge to edge with no gap between them, using the black stroke the artist drew between them. Off by default: that stroke looks exactly like a horizon, a caption rule or a black band drawn inside a single panel, so this also cuts some whole panels in half. Try it if your comic's panels are being merged together."
-                        ),
-                    },
-                },
-            },
+
             {
                 text = _("Pre-render next panel"),
                 checked_func = function()
