@@ -1,11 +1,32 @@
 # Panel detection
 
-How Panels+ decides where the panels on a page are, why there are two detectors,
-and which knobs change the result.
+How Panels+ decides where the panels on a page are, why there are two detector
+modes and two source backends, and which knobs change the result.
 
 See also: [MODES.md](MODES.md) for the reader-facing names of the modes this
 document describes, [ARCHITECTURE.md](ARCHITECTURE.md),
 [PERFORMANCE.md](PERFORMANCE.md).
+
+## Two source backends: Native and Embedded
+
+The format determines the source backend; **Quick**, **Smart**, and **Deep**
+remain the reader-facing detector modes in both cases.
+
+| Backend | Formats | Deep input | Coordinate space |
+| --- | --- | --- | --- |
+| **Native detection** | CBZ, CBR, PDF, DjVu, and other fixed-layout documents | The document backend renders the fixed page into KOPT | Native document-page coordinates |
+| **Embedded detection** | EPUB, MOBI, and reflowable documents with an extracted image | Panels+ copies that decoded image into KOPT | Extracted-image coordinates |
+
+Deep uses one shared KOPT/Leptonica implementation for both backends. It builds
+the grayscale image, applies KOReader's threshold, and finds 8-connected
+components **once**, then returns every qualifying panel rectangle. The older
+KOReader API repeats that complete work once per probe point. Thus improvements
+to the shared Deep collector, its component filter, or its ordering benefit
+both Native and Embedded detection; document rendering and image extraction
+remain backend-specific.
+
+If direct Leptonica access is missing in an older KOReader build, Panels+ falls
+back safely to KOReader's original per-probe method.
 
 ## Two detectors, two failure modes
 

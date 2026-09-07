@@ -13,9 +13,10 @@ local logger = require("logger")
 --- the rasterization away. Probing a grid therefore costs one full page render
 --- per point.
 ---
---- This module drives the same primitives directly so a whole probe plan runs
---- against a single rasterization. Both the single shared rasterization and its
---- per-probe fallback are skipped outright when free memory is below
+--- This module drives the same primitives directly so a fixed page is rendered
+--- once, then its KOPT components are extracted once for every panel. Its
+--- compatibility fallback still probes that one shared raster. Both the shared
+--- rasterization and the document-level per-probe fallback are skipped outright when free memory is below
 --- `native_detect_min_free_bytes` -- a full-resolution render is this plugin's
 --- single largest allocation, and on a low-memory device it is safer to report
 --- no panels than to risk an OOM kill.
@@ -41,20 +42,26 @@ end
 --- through MuPDF's page rasterizer; EPUB/MOBI already supply a decoded
 --- BlitBuffer, so we make the equivalent 8-bit KOPT source explicitly.
 ---
---- @return table|nil grey Temporary BlitBuffer that may be freed after KOPT
---- has copied it, or nil on failure.
+--- @return boolean ok Whether KOPT owns a completed copy of the image.
 local function copyImageToKoptSource(kc, image, Blitbuffer, ffi, k2pdfopt)
     local width, height = imageDimensions(image)
     if not width or not height or width <= 0 or height <= 0 then
         return nil
     end
 
-    -- KOPT's panel routine immediately converts its source to grayscale. Doing
-    -- that once here accepts every decoded image type and avoids format/stride
-    -- assumptions when copying into WILLUSBITMAP.
-    local grey = Blitbuffer.new(width, height, Blitbuffer.TYPE_BB8)
+    -- Avoid a second full image buffer when CREngine already gave us greyscale.
+    -- Other decoded formats are converted once here, then immediately released
+    -- after their bytes have been copied into KOPT's owned source allocation.
+    local source = image
+    local temporary_grey
+    if not (image.getType and image:getType() == Blitbuffer.TYPE_BB8) then
+        temporary_grey = Blitbuffer.new(width, height, Blitbuffer.TYPE_BB8)
+        source = temporary_grey
+    end
     local ok, err = pcall(function()
-        grey:blitFrom(image, 0, 0, 0, 0, width, height)
+        if temporary_grey then
+            temporary_grey:blitFrom(image, 0, 0, 0, 0, width, height)
+        end
         kc.src.width = width
         kc.src.height = height
         kc.src.bpp = 8
@@ -68,23 +75,134 @@ local function copyImageToKoptSource(kc, image, Blitbuffer, ffi, k2pdfopt)
         if kc.src.data == nil then
             error("K2PDFOpt source allocation failed")
         end
-        local source_stride = tonumber(grey.stride)
+        local source_stride = tonumber(source.stride)
         local target_stride = tonumber(k2pdfopt.bmp_bytewidth(kc.src))
         if not source_stride or not target_stride or source_stride < width or target_stride < width then
             error("invalid grayscale bitmap stride")
         end
         for y = 0, height - 1 do
-            ffi.copy(kc.src.data + y * target_stride, grey.data + y * source_stride, width)
+            ffi.copy(kc.src.data + y * target_stride, source.data + y * source_stride, width)
         end
     end)
+    if temporary_grey and temporary_grey.free then
+        temporary_grey:free()
+    end
     if not ok then
         logger.warn("[Panels+] could not create KOPT image source:", err)
-        if grey.free then
-            grey:free()
-        end
+        return false
+    end
+    return true
+end
+
+--- Load the public Leptonica FFI needed to perform KOPT panel detection once.
+--- The core KOPT module normally loads these itself; keeping this lazy lets
+--- the ordinary Lua test runner and older KOReader builds retain the original
+--- `kc:getPanelFromPage()` fallback.
+local component_runtime_checked = false
+local component_runtime
+local function getComponentRuntime()
+    if component_runtime_checked then
+        return component_runtime
+    end
+    component_runtime_checked = true
+    local ok, runtime = pcall(function()
+        local ffi = require("ffi")
+        require("ffi/koptcontext_h")
+        require("ffi/leptonica_h")
+        return {
+            ffi = ffi,
+            leptonica = ffi.loadlib("leptonica", "6"),
+        }
+    end)
+    if ok and runtime.leptonica then
+        component_runtime = runtime
+    end
+    return component_runtime
+end
+
+--- Run KOReader's exact KOPT/Leptonica panel algorithm once and return every
+--- qualifying connected component.
+---
+--- KOReader's `getPanelFromPage()` performs these exact operations for one
+--- probe: bitmap -> greyscale -> inverse/threshold/inverse -> 8-connected
+--- components. It then scans those components only to find the one containing
+--- that probe. Performing the shared work once and retaining all qualifying
+--- boxes includes every result a probe could return (and no longer misses a
+--- component between grid points), while avoiding up to a full probe grid of
+--- complete Leptonica pipelines.
+---
+--- @return PPPanel[]|nil panels Nil when direct Leptonica access is unavailable.
+local function collectKoptComponents(kc)
+    local runtime = getComponentRuntime()
+    if not runtime or not kc or not kc.src or kc.src.data == nil then
         return nil
     end
-    return grey
+
+    local ffi, leptonica = runtime.ffi, runtime.leptonica
+    local k2pdfopt = require("ffi/koptcontext").k2pdfopt
+    local pixs, pixg, pix_inverted, pix_thresholded, boxes
+    local function destroyPix(pix)
+        if pix ~= nil then
+            leptonica.pixDestroy(ffi.new("PIX *[1]", pix))
+        end
+    end
+    local function destroyBoxes(boxa)
+        if boxa ~= nil then
+            leptonica.boxaDestroy(ffi.new("BOXA *[1]", boxa))
+        end
+    end
+
+    local ok, panels_or_error = pcall(function()
+        pixs = k2pdfopt.bitmap2pix(kc.src, 0, 0, kc.src.width, kc.src.height)
+        if pixs == nil then
+            return {}
+        end
+        if leptonica.pixGetDepth(pixs) == 32 then
+            pixg = leptonica.pixConvertRGBToGrayFast(pixs)
+        else
+            pixg = leptonica.pixClone(pixs)
+        end
+        if pixg == nil then
+            return {}
+        end
+        pix_inverted = leptonica.pixInvert(nil, pixg)
+        pix_thresholded = pix_inverted and leptonica.pixThresholdToBinary(pix_inverted, 50) or nil
+        if pix_thresholded == nil then
+            return {}
+        end
+        leptonica.pixInvert(pix_thresholded, pix_thresholded)
+        boxes = leptonica.pixConnCompBB(pix_thresholded, 8)
+        if boxes == nil then
+            return {}
+        end
+
+        local image_width = leptonica.pixGetWidth(pixs)
+        local image_height = leptonica.pixGetHeight(pixs)
+        local geometry = ffi.new("l_int32[4]")
+        local panels = {}
+        for index = 0, leptonica.boxaGetCount(boxes) - 1 do
+            leptonica.boxaGetBoxGeometry(boxes, index, geometry, geometry + 1, geometry + 2, geometry + 3)
+            local x, y, width, height =
+                tonumber(geometry[0]), tonumber(geometry[1]), tonumber(geometry[2]), tonumber(geometry[3])
+            -- The original method clips the source to each box before checking
+            -- these dimensions; a connected-component box already has exactly
+            -- those dimensions, so no per-box PIX allocation is necessary.
+            if width >= image_width / 8 and height >= image_height / 8 then
+                table.insert(panels, { x = x, y = y, w = width, h = height })
+            end
+        end
+        return panels
+    end)
+    destroyBoxes(boxes)
+    destroyPix(pix_thresholded)
+    destroyPix(pix_inverted)
+    destroyPix(pixg)
+    destroyPix(pixs)
+    if not ok then
+        logger.warn("[Panels+] one-pass native component collection failed:", panels_or_error)
+        return nil
+    end
+    return panels_or_error
 end
 
 --- Add a detector probe point if its floored coordinate has not been used.
@@ -260,11 +378,18 @@ local function runBatchedProbes(document, page, probes, hold_pos, state)
         native_page = document._document:openPage(page)
         native_page:getPagePix(kc, document.render_mode, document.configurable.background_cleanup)
 
-        local probe = function(pos)
-            return kc:getPanelFromPage(pos)
+        local components = collectKoptComponents(kc)
+        if components then
+            for _, rect in ipairs(components) do
+                record(state, rect)
+            end
+        else
+            -- Compatibility fallback for a KOReader build without the direct
+            -- Leptonica symbols. It retains the prior, per-probe API path.
+            runProbes(probes, hold_pos, state, function(pos)
+                return kc:getPanelFromPage(pos)
+            end)
         end
-
-        runProbes(probes, hold_pos, state, probe)
     end)
 
     -- Both handles own C memory; free explicitly immediately after probing.
@@ -388,21 +513,24 @@ function NativeDetector.collectFromBlitbuffer(image, settings)
 
     local probes = NativeDetector.buildProbePlan(1, { w = width, h = height }, settings)
     local state = { panels = {}, by_key = {} }
-    local kc, grey
+    local kc
     local stop = Timing.span("embedded native detect")
     local ok, err = pcall(function()
         kc = KOPTContext.new()
-        grey = copyImageToKoptSource(kc, image, Blitbuffer, ffi, KOPTContext.k2pdfopt)
-        if not grey then
+        if not copyImageToKoptSource(kc, image, Blitbuffer, ffi, KOPTContext.k2pdfopt) then
             return
         end
-        runProbes(probes, nil, state, function(pos)
-            return kc:getPanelFromPage(pos)
-        end)
+        local components = collectKoptComponents(kc)
+        if components then
+            for _, rect in ipairs(components) do
+                record(state, rect)
+            end
+        else
+            runProbes(probes, nil, state, function(pos)
+                return kc:getPanelFromPage(pos)
+            end)
+        end
     end)
-    if grey and grey.free then
-        grey:free()
-    end
     if kc and kc.free then
         kc:free()
     end

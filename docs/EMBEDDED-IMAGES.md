@@ -11,15 +11,21 @@ margins, orientation, or line spacing change.
 
 ## Embedded-image detector
 
+This is **Embedded detection**, one of Panels+' two source backends. Native
+detection handles fixed-layout CBZ/CBR/PDF pages; Embedded detection handles a
+decoded image extracted from a reflowable book. Both use the same Quick/Smart/
+Deep modes and the same shared Deep component collector; only the source image
+and coordinate space differ. See [Detection](DETECTION.md#two-source-backends-native-and-embedded).
+
 The **Detector** button cycles through **Quick**, **Smart**, and **Deep**.
 It is separate from the normal document detector, so changing it does not
 alter the CBZ/CBR/PDF setting.
 
 `Quick` uses the standard low-resolution gutter map. `Deep` copies the
-extracted bitmap into a K2PDFOpt source context, then runs KOReader's native
-Leptonica component detector with the same probe plan used for fixed-layout
-documents. `Smart` follows the same policy as CBZ/CBR/PDF: Quick first, then
-Deep only if Quick rejects the image.
+extracted bitmap into a K2PDFOpt source context, then runs the shared native
+Leptonica component collector once for the whole image. `Smart` follows the
+same policy as CBZ/CBR/PDF: Quick first, then Deep only if Quick rejects the
+image.
 
 Quick uses the same uniform sampling and panel segmentation as CBZ/CBR/PDF.
 The source differs necessarily: fixed-layout files supply a rendered document
@@ -33,10 +39,12 @@ retained bitmap. This is the key adaptation: a reflow page cannot be sent to
 the fixed-document renderer, but its extracted image can be sent to the same
 K2PDFOpt/Leptonica routine.
 
-Deep makes a grayscale K2PDFOpt copy of the extracted image and is guarded by
-the same free-memory threshold as fixed-layout native detection. If K2PDFOpt
-is unavailable or finds no panel, the former image-space Outline pass is used
-as a fallback; it is not the primary Deep implementation.
+Deep makes one grayscale K2PDFOpt copy of the extracted image (none when the
+image is already greyscale), performs one connected-component pass, and is
+guarded by the same free-memory threshold as fixed-layout native detection. If
+direct K2PDFOpt/Leptonica access is unavailable or finds no panel, the former
+image-space Outline pass is used as a fallback; it is not the primary Deep
+implementation.
 
 ## Smooth navigation
 
