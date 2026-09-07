@@ -33,6 +33,7 @@ local spec_modules = {
     "tests.spec.pagebitmap_spec",
     "tests.spec.segmenter_spec",
     "tests.spec.panelviewer_navtransition_spec",
+    "tests.spec.dataset_benchmark_spec",
 }
 
 for _, mod in ipairs(spec_modules) do

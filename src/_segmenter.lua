@@ -160,11 +160,21 @@ end
 --- @param span integer Perpendicular extent, used to scale the ink tolerance.
 --- @param ink_ratio number Fraction of `span` still counted as empty.
 --- @param min_length integer Shortest run accepted as a gutter.
+--- @param avg_ink number|nil Average ink in region for adaptive valley detection.
+--- @param is_column boolean|nil Whether this is a column projection.
 --- @return integer|nil start First line of the widest gutter.
 --- @return integer|nil stop Last line of the widest gutter.
 --- @return integer length Width of the widest gutter, 0 when there is none.
-local function findWidestGutter(projection, from, to, span, ink_ratio, min_length)
+local function findWidestGutter(projection, from, to, span, ink_ratio, min_length, avg_ink, is_column)
     local max_ink = span * ink_ratio
+    local valley_cap = is_column and 0.05 or 0.11
+    local valley_ratio = is_column and 0.15 or 0.28
+    if avg_ink and avg_ink > 0 then
+        local valley_max = math.min(span * valley_cap, avg_ink * valley_ratio)
+        if valley_max > max_ink then
+            max_ink = valley_max
+        end
+    end
     local best_start, best_stop, best_length = nil, nil, 0
     local run_start = nil
 
@@ -176,11 +186,20 @@ local function findWidestGutter(projection, from, to, span, ink_ratio, min_lengt
         else
             if run_start and run_start > from then
                 local length = index - run_start
+                -- Noisy gutters (with screentones) should not exceed realistic gutter width (30 cells).
+                -- Truly clean gutters (near-zero ink) can span any width (e.g. wide margins).
+                local is_clean = projection[run_start] <= span * 0.02
+                local max_allowed_len = is_clean and math.huge or 30
                 -- A one-cell cut is only safe when it is truly blank. The
                 -- usual proportional tolerance is useful for multi-cell
                 -- gutters (which can pick up a halftone speck), but would let
                 -- a one-cell artwork gap split a Comic panel in two.
-                if length >= min_length and (length > 1 or projection[run_start] == 0) and length > best_length then
+                if
+                    length >= min_length
+                    and length <= max_allowed_len
+                    and (length > 1 or projection[run_start] == 0)
+                    and length > best_length
+                then
                     best_start, best_stop, best_length = run_start, index - 1, length
                 end
             end
@@ -554,10 +573,12 @@ local function cut(map, x0, y0, x1, y1, depth, ctx, out)
     if depth < ctx.max_depth then
         local width = right - left + 1
         local height = bottom - top + 1
+        local avg_row = height > 0 and (region_ink / height) or 0
+        local avg_col = width > 0 and (region_ink / width) or 0
         local row_start, row_stop, row_length =
-            findWidestGutter(ctx.rows, top, bottom, width, ctx.ink_ratio, ctx.min_gutter)
+            findWidestGutter(ctx.rows, top, bottom, width, ctx.ink_ratio, ctx.min_gutter, avg_row, false)
         local col_start, col_stop, col_length =
-            findWidestGutter(ctx.cols, left, right, height, ctx.ink_ratio, ctx.min_gutter)
+            findWidestGutter(ctx.cols, left, right, height, ctx.ink_ratio, ctx.min_gutter, avg_col, true)
 
         -- Every value needed below is already a local, so the children are free
         -- to overwrite the shared projection buffers.
@@ -655,10 +676,16 @@ function Segmenter.segment(map, settings)
     -- generic ratio still controls Manga; Comic mode intentionally accepts the
     -- smallest possible complete background seam.
     local min_dimension = math.min(map.w, map.h)
+    local default_ink_ratio = settings.mode == "manga" and 0.08 or defaults.segment_gutter_ink_ratio
+    local ink_ratio = settings.segment_gutter_ink_ratio or default_ink_ratio
+    if settings.mode == "manga" and settings.segment_gutter_ink_ratio == defaults.segment_gutter_ink_ratio then
+        ink_ratio = 0.08
+    end
+
     local ctx = {
         rows = ffi.new("int32_t[?]", map.h),
         cols = ffi.new("int32_t[?]", map.w),
-        ink_ratio = settings.segment_gutter_ink_ratio or defaults.segment_gutter_ink_ratio,
+        ink_ratio = ink_ratio,
         min_gutter = settings.mode == "comic" and 1
             or math.max(2, math.floor(min_dimension * (settings.segment_gutter_ratio or defaults.segment_gutter_ratio))),
         min_side = math.max(
