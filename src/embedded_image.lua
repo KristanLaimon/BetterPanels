@@ -1,6 +1,7 @@
 local Blitbuffer = require("ffi/blitbuffer")
 local Event = require("ui/event")
 local Geometry = require("src._geometry")
+local Memory = require("src._memory")
 local PageBitmap = require("src._pagebitmap")
 local PanelViewport = require("src._panelviewport")
 local PanelViewer = require("src._panelviewer")
@@ -18,6 +19,11 @@ local Screen = require("device").screen
 --- Its document API can still extract the image under a hold, so we segment
 --- that bitmap itself and feed its crops to the normal Panels+ viewer.
 local EmbeddedImage = {}
+
+-- Reused probe ratios: page-to-page image search must not create two small
+-- tables for every reflow page it crosses.
+local IMAGE_SEARCH_XS = { 0.1, 0.25, 0.4, 0.6, 0.75, 0.9 }
+local IMAGE_SEARCH_YS = { 0.08, 0.2, 0.35, 0.5, 0.65, 0.8, 0.92 }
 
 local function isSupportedDocument(document)
     local file = document and document.file
@@ -173,6 +179,7 @@ local function extractImage(document, pos)
     if ok and image and type(image.getType) == "function" then
         return image
     end
+    freeImage(image)
     return nil
 end
 
@@ -244,6 +251,12 @@ local function detectPanels(image, settings)
         return native, "exact"
     end
 
+    -- Outline is optional recovery work. Do not allocate its larger map after
+    -- Deep already declined for lack of room on a low-memory reader.
+    local outline_floor = settings.prerender_min_free_bytes or Settings.defaults.prerender_min_free_bytes
+    if not Memory.hasHeadroom(outline_floor) then
+        return nil, "low memory"
+    end
     local panels, reason = detectWith(outlineSettings(settings))
     if panels then
         return panels, "exact"
@@ -324,6 +337,9 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         boundary_callback = function(direction, current_viewer)
             return self:onEmbeddedImageBoundary(direction, current_viewer)
         end,
+        embedded_cleanup_callback = function(current_viewer)
+            self:cancelEmbeddedImageSearch(current_viewer)
+        end,
         mode_toggle_callback = function(current_viewer)
             self:setMode(self.settings.mode == "manga" and "comic" or "manga")
             return self:reopenEmbeddedImagePanels(current_viewer)
@@ -396,6 +412,12 @@ end
 
 --- Rebuild an embedded image viewer after changing its reading order or crop.
 function EmbeddedImage:reopenEmbeddedImagePanels(viewer)
+    -- A boundary search intentionally releases the source before it crosses
+    -- reflow pages. Ignore a late menu/button action rather than closing the
+    -- still-visible current crop and attempting to rebuild from nil.
+    if viewer._panels_plus_boundary_pending or not viewer.embedded_source_image then
+        return true
+    end
     local panel = viewer.panels and viewer.panels[viewer._images_list_cur or 1]
     local start_point = panel
         and {
@@ -417,10 +439,8 @@ function EmbeddedImage:findEmbeddedImageOnCurrentPage()
     if not document or not view or type(document.getImageFromPosition) ~= "function" then
         return nil
     end
-    local xs = { 0.1, 0.25, 0.4, 0.6, 0.75, 0.9 }
-    local ys = { 0.08, 0.2, 0.35, 0.5, 0.65, 0.8, 0.92 }
-    for _, y_ratio in ipairs(ys) do
-        for _, x_ratio in ipairs(xs) do
+    for _, y_ratio in ipairs(IMAGE_SEARCH_YS) do
+        for _, x_ratio in ipairs(IMAGE_SEARCH_XS) do
             local pos = view:screenToPageTransform({
                 x = math.floor(Screen:getWidth() * x_ratio),
                 y = math.floor(Screen:getHeight() * y_ratio),
@@ -436,10 +456,39 @@ function EmbeddedImage:findEmbeddedImageOnCurrentPage()
     return nil
 end
 
+--- Invalidate queued reflow-page searches. `tickAfterNext()` has no public
+--- cancellation handle, so a generation token makes stale callbacks harmless
+--- as soon as a viewer or document closes.
+--- @param viewer PanelViewer|nil Viewer whose search should be cancelled.
+function EmbeddedImage:cancelEmbeddedImageSearch(viewer)
+    self._embedded_search_generation = (self._embedded_search_generation or 0) + 1
+    if not viewer or self._embedded_search_viewer == viewer then
+        self._embedded_search_viewer = nil
+    end
+end
+
+--- Queue one search step only while its embedded viewer remains current.
+local function scheduleEmbeddedImageSearch(plugin, page, direction, viewer, generation)
+    UIManager:tickAfterNext(function()
+        if
+            plugin._embedded_search_generation ~= generation
+            or plugin._embedded_search_viewer ~= viewer
+            or (viewer and viewer._panels_plus_closed)
+        then
+            return
+        end
+        plugin:openNextEmbeddedImagePage(page, direction, viewer, generation)
+    end)
+end
+
 --- Turn through reflow pages until another image with a panel layout appears.
-function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer)
+function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, generation)
     local ui, document = self.ui, self.ui and self.ui.document
-    if not document or (viewer and viewer._panels_plus_closed) then
+    if
+        not document
+        or (generation and generation ~= self._embedded_search_generation)
+        or (viewer and viewer._panels_plus_closed)
+    then
         return false
     end
     local image = self:findEmbeddedImageOnCurrentPage()
@@ -461,9 +510,7 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer)
         return false
     end
     ui:handleEvent(Event:new("GotoPage", next_page))
-    UIManager:tickAfterNext(function()
-        self:openNextEmbeddedImagePage(next_page, direction, viewer)
-    end)
+    scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end
 
@@ -481,10 +528,21 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
         return true
     end
 
+    if self.cancelEmbeddedImageSearch then
+        self:cancelEmbeddedImageSearch()
+    else
+        self._embedded_search_generation = (self._embedded_search_generation or 0) + 1
+    end
+    local generation = self._embedded_search_generation
+    self._embedded_search_viewer = viewer
+    -- Keep the active, already-rendered crop visible, but discard the full
+    -- source image and lazy crop closures before scanning subsequent pages.
+    if viewer.releaseEmbeddedSource then
+        viewer:releaseEmbeddedSource(true)
+    end
+
     self.ui:handleEvent(Event:new("GotoPage", next_page))
-    UIManager:tickAfterNext(function()
-        self:openNextEmbeddedImagePage(next_page, direction, viewer)
-    end)
+    scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end
 

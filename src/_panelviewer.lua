@@ -63,7 +63,9 @@ end
 --- @field page number|nil Document page number represented by `panels`.
 --- @field panels PPPanel[]|nil Ordered panel rectangles.
 --- @field image_rects PPPanel[]|nil Crop rectangles matching `_images_list`, for prerendering.
+--- @field embedded_source_image Blitbuffer|nil Decoded reflow image owned by this viewer.
 --- @field image_union_renderer fun(union:PPRect, zoom:number):Blitbuffer|nil Optional image-space union renderer for smooth transitions.
+--- @field embedded_cleanup_callback fun(viewer:PanelViewer):nil|nil Owner hook that cancels an embedded page search.
 --- @field reader_ui table|nil Reader UI that owns the normal document gesture zones.
 --- @field panel_prerender_callback fun(viewer:PanelViewer, index:integer)|nil
 --- @field boundary_callback fun(direction:PPBoundaryDirection, viewer:PanelViewer):boolean|nil
@@ -106,6 +108,7 @@ local PanelViewer = ImageViewer:extend({
     image_rects = nil,
     embedded_source_image = nil,
     image_union_renderer = nil,
+    embedded_cleanup_callback = nil,
     reader_ui = nil,
     panel_prerender_callback = nil,
     detector_cycle_callback = nil,
@@ -532,6 +535,9 @@ end
 ---
 --- @return boolean|nil handled Whether the image switch was handled.
 function PanelViewer:onShowNextImage()
+    if self._panels_plus_boundary_pending then
+        return true
+    end
     if self._images_list_cur < self._images_list_nb then
         if self.nav_transition_mode == "smooth" then
             return self:animateSwitchToImageNum(self._images_list_cur + 1)
@@ -547,6 +553,9 @@ end
 ---
 --- @return boolean|nil handled Whether the image switch was handled.
 function PanelViewer:onShowPrevImage()
+    if self._panels_plus_boundary_pending then
+        return true
+    end
     if self._images_list_cur > 1 then
         if self.nav_transition_mode == "smooth" then
             return self:animateSwitchToImageNum(self._images_list_cur - 1)
@@ -1320,6 +1329,14 @@ end
 function PanelViewer:onCloseWidget()
     self._panels_plus_closed = true
     self._panels_plus_closing = true
+    self._panels_plus_transition_active = nil
+    if self._panels_plus_transition_action then
+        UIManager:unschedule(self._panels_plus_transition_action)
+        self._panels_plus_transition_action = nil
+    end
+    if self.embedded_cleanup_callback then
+        pcall(self.embedded_cleanup_callback, self)
+    end
     local active_image = self.image
     local ok, err = pcall(function()
         return self:withGuardedImageViewerRefresh(function()
@@ -1333,16 +1350,41 @@ function PanelViewer:onCloseWidget()
     self.image = nil
     self._images_list = nil
     self.image_rects = nil
-    if self.embedded_source_image and self.embedded_source_image.free then
-        self.embedded_source_image:free()
-    end
-    self.embedded_source_image = nil
+    self:releaseEmbeddedSource()
     self.panels = nil
     self.panel_is_full_page = nil
+    self.boundary_callback = nil
+    self.detector_cycle_callback = nil
+    self.mode_toggle_callback = nil
+    self.crop_toggle_callback = nil
+    self.margin_ratio_callback = nil
+    self.bleed_ratio_callback = nil
+    self.panel_prerender_callback = nil
+    self.embedded_cleanup_callback = nil
     pcall(WordFinder.cleanup)
-    collectgarbage("collect")
+    if not Memory.hasHeadroom(NAV_TRANSITION_MIN_FREE_BYTES) then
+        collectgarbage("collect")
+    end
     if not ok then
         error(err)
+    end
+end
+
+--- Release the decoded EPUB/MOBI source and the renderer closure that captures
+--- it. The current displayed crop remains owned by `self.image`, so this is
+--- safe while a boundary search keeps the viewer visible.
+function PanelViewer:releaseEmbeddedSource(discard_navigation)
+    local source = self.embedded_source_image
+    self.embedded_source_image = nil
+    self.image_union_renderer = nil
+    if discard_navigation then
+        self._images_list = nil
+        self.image_rects = nil
+        self.panels = nil
+        self.panel_is_full_page = nil
+    end
+    if source and source.free then
+        source:free()
     end
 end
 
@@ -1483,6 +1525,18 @@ function PanelViewer:animateSwitchToImageNum(target)
     end
 
     local zoom_union = canvasFitZoom(union)
+    local canvas_w = math.max(1, math.ceil(2 * half_w * zoom_union))
+    local canvas_h = math.max(1, math.ceil(2 * half_h * zoom_union))
+    -- `content_image` and `canvas_image` coexist while compositing. Estimate
+    -- four bytes per pixel even on an e-ink device: this remains safe for
+    -- colour EPUB images and makes smooth navigation yield before it can evict
+    -- the reader's current tile on a 300MB device.
+    local source_pixels = math.max(1, math.ceil(union.w * zoom_union)) * math.max(1, math.ceil(union.h * zoom_union))
+    local transition_bytes = (source_pixels + canvas_w * canvas_h) * 4 + 2 * 1024 * 1024
+    if not Memory.hasAllocationHeadroom(NAV_TRANSITION_MIN_FREE_BYTES, transition_bytes) then
+        Timing.log("animateSwitchToImageNum: transition working set is too large, falling back to instant swap")
+        return self:switchToImageNum(target)
+    end
     local ok, content_image, content_image_owned = pcall(function()
         if self.image_union_renderer then
             return self.image_union_renderer(union, zoom_union), true
@@ -1499,8 +1553,6 @@ function PanelViewer:animateSwitchToImageNum(target)
 
     local scale = target_zoom / zoom_union -- applied once, below, via self.scale_factor
 
-    local canvas_w = math.max(1, math.ceil(2 * half_w * zoom_union))
-    local canvas_h = math.max(1, math.ceil(2 * half_h * zoom_union))
     local ok_canvas, canvas_image = pcall(function()
         local canvas = Blitbuffer.new(canvas_w, canvas_h, content_image:getType())
         canvas:fill(Blitbuffer.COLOR_WHITE)
@@ -1577,6 +1629,7 @@ function PanelViewer:runNavPanAnimation(target_ratio_x, target_ratio_y, on_compl
     local step_n = 0
     local walkStep
     walkStep = function()
+        self._panels_plus_transition_action = nil
         if not self._panels_plus_transition_active or self._panels_plus_closed or not self:isOpen() then
             self._panels_plus_transition_active = nil
             return
@@ -1590,12 +1643,14 @@ function PanelViewer:runNavPanAnimation(target_ratio_x, target_ratio_y, on_compl
         end
         self:panBy(desired_x - self._image_wg._offset_x, desired_y - self._image_wg._offset_y)
         if step_n < steps then
+            self._panels_plus_transition_action = walkStep
             UIManager:scheduleIn(step_delay, walkStep)
         else
             self._panels_plus_transition_active = nil
             on_complete()
         end
     end
+    self._panels_plus_transition_action = walkStep
     UIManager:scheduleIn(step_delay, walkStep)
 end
 

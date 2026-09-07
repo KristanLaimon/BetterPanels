@@ -24,6 +24,16 @@ local logger = require("logger")
 --- @class PPNativeDetectorModule
 local NativeDetector = {}
 
+--- Conservative bytes needed while KOPT turns a source page into a Leptonica
+--- component map. This deliberately overestimates the one-bit threshold image
+--- and component list: on a 300MB device skipping an oversized Deep pass is
+--- preferable to leaving KOReader without enough memory to redraw the reader.
+local function deepWorkingSetBytes(width, height, source_is_greyscale)
+    local pixels = math.max(0, width or 0) * math.max(0, height or 0)
+    local bytes_per_pixel = source_is_greyscale and 5 or 6
+    return math.floor(pixels * bytes_per_pixel + 2 * 1024 * 1024)
+end
+
 --- Return a BlitBuffer's source dimensions without assuming a particular
 --- backend's field layout.
 local function imageDimensions(image)
@@ -432,8 +442,13 @@ function NativeDetector.collect(ui, settings, page, hold_pos)
     -- this plugin makes. On a low-memory device it is worth skipping outright
     -- rather than risking an OOM kill, which leaves no Lua traceback -- only
     -- the memory trend in the log, if debug_mode was already on.
-    if not Memory.hasHeadroom(min_free) then
-        Timing.memory("native detect skipped: low memory (need >=%dMB)", math.floor(min_free / (1024 * 1024)))
+    local working_set = deepWorkingSetBytes(page_size.w, page_size.h, false)
+    if not Memory.hasAllocationHeadroom(min_free, working_set) then
+        Timing.memory(
+            "native detect skipped: low memory (need >=%dMB + %dMB working set)",
+            math.floor(min_free / (1024 * 1024)),
+            math.ceil(working_set / (1024 * 1024))
+        )
         return {}
     end
 
@@ -443,7 +458,9 @@ function NativeDetector.collect(ui, settings, page, hold_pos)
 
     if runBatchedProbes(document, page, probes, hold_pos, state) then
         stop(string.format("%d panels from %d probes, 1 page render", #state.panels, #probes))
-        collectgarbage("collect")
+        if not Memory.hasHeadroom(min_free) then
+            collectgarbage("collect")
+        end
         return Geometry.sortReadingOrder(state.panels, settings.mode)
     end
 
@@ -457,10 +474,11 @@ function NativeDetector.collect(ui, settings, page, hold_pos)
     -- kc:free()/native_page:close() just released, instead of a stale
     -- pre-attempt reading.
     collectgarbage("collect")
-    if not Memory.hasHeadroom(min_free) then
+    if not Memory.hasAllocationHeadroom(min_free, working_set) then
         Timing.memory(
-            "native detect fallback skipped: low memory after batched failure (need >=%dMB)",
-            math.floor(min_free / (1024 * 1024))
+            "native detect fallback skipped: low memory after batched failure (need >=%dMB + %dMB working set)",
+            math.floor(min_free / (1024 * 1024)),
+            math.ceil(working_set / (1024 * 1024))
         )
         stop("skipped fallback: low memory")
         return {}
@@ -473,7 +491,9 @@ function NativeDetector.collect(ui, settings, page, hold_pos)
     end)
     stop(string.format("%d panels from %d probes, per-probe renders", #state.panels, #probes))
     Timing.memory("native detect fallback end")
-    collectgarbage("collect")
+    if not Memory.hasHeadroom(min_free) then
+        collectgarbage("collect")
+    end
     return Geometry.sortReadingOrder(state.panels, settings.mode)
 end
 
@@ -496,8 +516,14 @@ function NativeDetector.collectFromBlitbuffer(image, settings)
     end
 
     local min_free = settings.native_detect_min_free_bytes or Settings.defaults.native_detect_min_free_bytes
-    if not Memory.hasHeadroom(min_free) then
-        Timing.memory("embedded native detect skipped: low memory (need >=%dMB)", math.floor(min_free / (1024 * 1024)))
+    local source_is_greyscale = image.getType and image:getType() == require("ffi/blitbuffer").TYPE_BB8
+    local working_set = deepWorkingSetBytes(width, height, source_is_greyscale)
+    if not Memory.hasAllocationHeadroom(min_free, working_set) then
+        Timing.memory(
+            "embedded native detect skipped: low memory (need >=%dMB + %dMB working set)",
+            math.floor(min_free / (1024 * 1024)),
+            math.ceil(working_set / (1024 * 1024))
+        )
         return {}
     end
 
@@ -540,7 +566,9 @@ function NativeDetector.collectFromBlitbuffer(image, settings)
     end
 
     stop(string.format("%d panels from %d probes", #state.panels, #probes))
-    collectgarbage("collect")
+    if not Memory.hasHeadroom(min_free) then
+        collectgarbage("collect")
+    end
     return Geometry.sortReadingOrder(state.panels, settings.mode)
 end
 

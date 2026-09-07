@@ -161,6 +161,7 @@ Anything Panels+ holds makes that worse.
 | Panel rectangle lists | `panel_cache_pages` (12) pages | ~a few hundred bytes per page |
 | Ink map | during detection only | ~340KB, then collected |
 | Greyscale copy (colour pages only) | during detection only | ~340KB, freed immediately |
+| Deep KOPT/Leptonica buffers | one Deep attempt | Full-source-size, manually freed and budget-gated |
 | Panel image list | while the viewer is open | render *functions*, not bitmaps |
 | Current panel bitmap | one at a time | one screen-sized buffer |
 | Prerendered tile | owned by `DocCache` | not the plugin's |
@@ -182,6 +183,14 @@ Deliberate choices behind that table:
   render and its up-to-29-render per-probe fallback are skipped outright and
   the page is treated as having no panels, rather than risking an OOM kill on
   what is this plugin's single largest allocation.
+- **Deep reserves its real working set.** The fixed floor alone is not enough:
+  Panels+ estimates the KOPT source and Leptonica temporary images from the
+  current page/image dimensions, and runs Deep only when both that estimate and
+  the safety floor fit. This is deliberately conservative on 300MB devices.
+- **Embedded boundary searches drop the old source first.** The current crop
+  stays visible, but the decoded bitmap and its lazy crop closures do not
+  survive while later EPUB/MOBI pages are searched. Queued search callbacks are
+  invalidated when the viewer or document closes.
 - **Scheduled work is cancellable.** Prefetch jobs and the prerender job are held
   by handle and unscheduled on cache clear and on close, so closures do not keep
   a closed document alive.

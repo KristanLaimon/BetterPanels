@@ -46,6 +46,12 @@ direct K2PDFOpt/Leptonica access is unavailable or finds no panel, the former
 image-space Outline pass is used as a fallback; it is not the primary Deep
 implementation.
 
+On an image-to-image boundary, Panels+ keeps only the already-rendered current
+crop on screen. It immediately releases the old full source bitmap, its lazy
+crop closures, and any stale queued page search before scanning later reflow
+pages. This prevents one large EPUB/MOBI image from staying resident throughout
+an arbitrarily long search.
+
 ## Smooth navigation
 
 For fixed-layout documents, smooth navigation renders the union of the old and

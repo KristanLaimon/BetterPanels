@@ -29,4 +29,17 @@ function Memory.hasHeadroom(min_bytes)
     return not free_bytes or free_bytes >= min_bytes
 end
 
+--- Return whether there is room for both a safety floor and a known upcoming
+--- allocation. `calcFreeMem()` is sampled before the allocation, so checking
+--- only a fixed floor lets one large comic page consume the entire remainder
+--- on low-memory devices.
+---
+--- @param min_bytes integer Memory that must remain free after the work.
+--- @param allocation_bytes integer|nil Conservative temporary-allocation estimate.
+--- @return boolean allowed `true` when free memory is unavailable, otherwise enough for both.
+function Memory.hasAllocationHeadroom(min_bytes, allocation_bytes)
+    local free_bytes = Memory.freeBytes()
+    return not free_bytes or free_bytes >= min_bytes + math.max(0, allocation_bytes or 0)
+end
+
 return Memory

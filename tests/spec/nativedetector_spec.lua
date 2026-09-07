@@ -20,8 +20,23 @@ describe("NativeDetector embedded-image path", function()
         assert.equals(0, #panels)
     end)
 
+    it("rejects Deep before loading KOPT when its estimated working set does not fit", function()
+        local original_has_allocation_headroom = Memory.hasAllocationHeadroom
+        Memory.hasAllocationHeadroom = function()
+            return false
+        end
+
+        local panels = NativeDetector.collectFromBlitbuffer({ w = 1200, h = 1800 }, {
+            native_detect_min_free_bytes = 1,
+        })
+
+        Memory.hasAllocationHeadroom = original_has_allocation_headroom
+        assert.equals(0, #panels)
+    end)
+
     it("adapts an extracted bitmap into the shared KOPT probe routine", function()
         local original_has_headroom = Memory.hasHeadroom
+        local original_has_allocation_headroom = Memory.hasAllocationHeadroom
         local original_kopt = package.loaded["ffi/koptcontext"]
         local original_blitbuffer = package.loaded["ffi/blitbuffer"]
         local original_ffi = package.loaded.ffi
@@ -33,6 +48,9 @@ describe("NativeDetector embedded-image path", function()
         })
 
         Memory.hasHeadroom = function()
+            return true
+        end
+        Memory.hasAllocationHeadroom = function()
             return true
         end
         package.loaded.ffi = {
@@ -85,6 +103,7 @@ describe("NativeDetector embedded-image path", function()
         })
 
         Memory.hasHeadroom = original_has_headroom
+        Memory.hasAllocationHeadroom = original_has_allocation_headroom
         package.loaded["ffi/koptcontext"] = original_kopt
         package.loaded["ffi/blitbuffer"] = original_blitbuffer
         package.loaded.ffi = original_ffi

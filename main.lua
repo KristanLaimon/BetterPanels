@@ -337,6 +337,7 @@ end
 --- for it when headroom is genuinely low; otherwise let Lua's normal
 --- incremental GC reclaim this cache without a synchronous pause.
 function PanelsPlus:onCloseWidget()
+    self:cancelEmbeddedImageSearch()
     self:cancelPanelPrefetch()
     self:cancelPanelPrerender()
     self:clearPanelCache()

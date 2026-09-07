@@ -1,4 +1,5 @@
 local PanelCollector = require("src._panelcollector")
+local Memory = require("src._memory")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
 local UIManager = require("ui/uimanager")
@@ -108,6 +109,15 @@ function Cache:preloadPanels(page)
     end
 
     if self:getCachedPanels(page) then
+        return
+    end
+
+    -- A delayed prefetch may start a full Deep pass while the reader still
+    -- owns the current tile. It is optional work, so reserve the stricter
+    -- native-detection floor and leave a low-memory device responsive.
+    local minimum = self.settings.native_detect_min_free_bytes or Settings.defaults.native_detect_min_free_bytes
+    if not Memory.hasHeadroom(minimum) then
+        Timing.memory("panel prefetch skipped: low memory (need >=%dMB)", math.floor(minimum / (1024 * 1024)))
         return
     end
 

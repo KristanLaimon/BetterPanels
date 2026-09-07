@@ -32,12 +32,17 @@ describe("EmbeddedImage boundary flow", function()
             },
             openNextEmbeddedImagePage = seek,
         }
-        local viewer = {}
+        local release_source = spy()
+        local viewer = {
+            releaseEmbeddedSource = release_source,
+        }
 
         assert.is_true(EmbeddedImage.onEmbeddedImageBoundary(plugin, "next", viewer))
         assert.is_false(close:called(), "old panel viewer must stay up while the next image is being found")
         assert.equals("GotoPage", handle:lastCall()[2].name)
         assert.equals(5, handle:lastCall()[2].args[1])
+        assert.is_true(release_source:called())
+        assert.equals(true, release_source:lastCall()[2])
 
         UIManager._embedded_image_test_callback()
         assert.equals(5, seek:lastCall()[2])
@@ -66,6 +71,40 @@ describe("EmbeddedImage smooth boundaries", function()
         assert.is_true(viewer:onPanelBoundary("next"))
         assert.is_true(boundary:called())
         assert.is_false(animated:called())
+    end)
+end)
+
+describe("EmbeddedImage source lifetime", function()
+    it("releases the full source and lazy navigation closures during a boundary search", function()
+        local free = spy()
+        local viewer = PanelViewer:new({
+            embedded_source_image = { free = free },
+            image_union_renderer = function() end,
+            _images_list = { function() end },
+            image_rects = { {} },
+            panels = { {} },
+            panel_is_full_page = { false },
+        })
+
+        viewer:releaseEmbeddedSource(true)
+
+        assert.is_true(free:called())
+        assert.equals(nil, viewer.embedded_source_image)
+        assert.equals(nil, viewer.image_union_renderer)
+        assert.equals(nil, viewer._images_list)
+        assert.equals(nil, viewer.image_rects)
+        assert.equals(nil, viewer.panels)
+    end)
+
+    it("consumes navigation while its source has been released for a boundary search", function()
+        local viewer = PanelViewer:new({
+            _panels_plus_boundary_pending = true,
+            _images_list_cur = 2,
+            _images_list_nb = 2,
+        })
+
+        assert.is_true(viewer:onShowNextImage())
+        assert.is_true(viewer:onShowPrevImage())
     end)
 end)
 
