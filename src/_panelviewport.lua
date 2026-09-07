@@ -6,7 +6,7 @@ local Screen = require("device").screen
 --- page. It means that each panel gets a screen-aspect viewport centred on
 --- that panel, retaining surrounding context where possible. Keeping this
 --- geometry independent of the renderer lets document pages and extracted
---- EPUB/MOBI bitmaps navigate through the same panel positions.
+--- EPUB/KEPUB/MOBI bitmaps navigate through the same panel positions.
 local PanelViewport = {}
 
 --- Build the screen-aspect viewport centred on a panel.

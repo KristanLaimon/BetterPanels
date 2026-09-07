@@ -1370,7 +1370,7 @@ function PanelViewer:onCloseWidget()
     end
 end
 
---- Release the decoded EPUB/MOBI source and the renderer closure that captures
+--- Release the decoded EPUB/KEPUB/MOBI source and the renderer closure that captures
 --- it. The current displayed crop remains owned by `self.image`, so this is
 --- safe while a boundary search keeps the viewer visible.
 function PanelViewer:releaseEmbeddedSource(discard_navigation)

@@ -6,6 +6,45 @@ local EmbeddedImage = require("src.embedded_image")
 local PanelViewer = require("src._panelviewer")
 local UIManager = require("ui/uimanager")
 
+describe("EmbeddedImage KEPUB compatibility", function()
+    it("opens image panels for direct and Kobo-synced KEPUB filenames", function()
+        for _, filename in ipairs({ "/books/manga.kepub", "/books/manga.kepub.epub", "/books/MANGA.KEPUB" }) do
+            local opened = spy()
+            opened.return_value = true
+            local image = {
+                getType = function()
+                    return 1
+                end,
+            }
+            local plugin = {
+                ui = {
+                    rolling = true,
+                    document = {
+                        file = filename,
+                        getImageFromPosition = function()
+                            return image
+                        end,
+                    },
+                },
+                showEmbeddedImagePanelsForImage = opened,
+            }
+            local cleared = spy()
+            local highlight = {
+                view = {
+                    screenToPageTransform = function()
+                        return { x = 10, y = 20 }
+                    end,
+                },
+                clear = cleared,
+            }
+
+            assert.is_true(EmbeddedImage.showEmbeddedImagePanels(plugin, highlight, { pos = { x = 1, y = 1 } }))
+            assert.equals(image, opened:lastCall()[2], filename .. " should use the embedded-image panel path")
+            assert.is_true(cleared:called())
+        end
+    end)
+end)
+
 describe("EmbeddedImage boundary flow", function()
     it("turns the reader page, keeps the viewer up, and seeks the next image", function()
         local close = spy()

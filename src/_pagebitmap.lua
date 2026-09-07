@@ -400,7 +400,7 @@ end
 
 --- Build a binary ink map from an already-decoded image.
 ---
---- Reflow documents (EPUB/MOBI) cannot be mapped through `renderPage()`: the
+--- Reflow documents (EPUB/KEPUB/MOBI) cannot be mapped through `renderPage()`: the
 --- returned page geometry belongs to the laid-out text flow, not to an image
 --- embedded in it. KOReader can, however, give us that image's BlitBuffer
 --- directly. Keeping this path here means it uses exactly the same

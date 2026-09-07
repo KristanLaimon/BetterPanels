@@ -63,14 +63,14 @@ This could work with even older versions, but not personally tested. If any issu
   <li><em>.cbr (digital comic book archive):</em> Usual standard format for western comics</li>
   <li><em>.cbz (Comic Book Zip Archive):</em> The standard for mangas, usually found in this format when downloading from internet or in (.cbr). I strongly recommend using <a href="https://github.com/manga-download/hakuneko">Hakuneko (Downloader)</a> and <a href="https://github.com/ciromattia/kcc">KCC (Kindle Comic Converter)</a> to adapt hakuneko downloads to .cbz for mangas. This is the top priority format I give support/compatibility with this plugin</li>
   <li><em>.pdf (Portable Document Format):</em> Another common format when downloading mangas/comics.</li>
-  <li><em>.epub / .mobi:</em> Panels+ automatically opens embedded raster images under a long press and detects panels inside them. Text remains handled by KOReader's normal reader.</li>
+  <li><em>.epub / .kepub / .mobi:</em> Panels+ automatically opens embedded raster images under a long press and detects panels inside them. This includes Kobo-synced <code>.kepub.epub</code> books and directly named <code>.kepub</code> files when KOReader opens them. Text remains handled by KOReader's normal reader.</li>
 </ul>
 
 <strong>File types formats NOT tested/supported (They could/could not work)</strong>
 <ul>
   <li><em>.any_other</em></li>
 </ul>
-EPUB and MOBI are still primarily text formats, so Panels+ only takes over when the long press lands on an embedded bitmap. Images with no detectable panel layout keep KOReader's native image viewer.
+EPUB, KEPUB, and MOBI are still primarily text formats, so Panels+ only takes over when the long press lands on an embedded bitmap. Images with no detectable panel layout keep KOReader's native image viewer.
 
 ### 📲 Kobo Compatibility (kobo.koplugin >= 0.4.1)
 
@@ -197,7 +197,7 @@ Currently there is only: ***English*** and ***Spanish*** support.
 - [Architecture](docs/ARCHITECTURE.md) — how the plugin is put together, and what happens between a long hold and a panel on screen.
 - [Panel detection](docs/DETECTION.md) — how panels are found, why there are two detectors, and every tuning knob.
 - [Viewer modes](docs/MODES.md) — what Smart, Quick and Deep mode mean for the reader, and where to change them.
-- [Embedded EPUB/MOBI images](docs/EMBEDDED-IMAGES.md) — how panel reading works inside reflowable books, including the detector and smooth-navigation limits.
+- [Embedded EPUB/KEPUB/MOBI images](docs/EMBEDDED-IMAGES.md) — how panel reading works inside reflowable books, including the detector and smooth-navigation limits.
 - [Word lookup](docs/WORD-LOOKUP.md) — touch-and-hold text selection, dictionary lookup, and the OCR debug review mode.
 - [Performance](docs/PERFORMANCE.md) — what each step costs, the memory budget, and how to measure it on your own device.
 - [Known Limitations](docs/KNOWN-LIMITATIONS.md) — current edge cases and known-behaviour (a todo-list to fix at the same time).

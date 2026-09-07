@@ -15,7 +15,7 @@ remain the reader-facing detector modes in both cases.
 | Backend | Formats | Deep input | Coordinate space |
 | --- | --- | --- | --- |
 | **Native detection** | CBZ, CBR, PDF, DjVu, and other fixed-layout documents | The document backend renders the fixed page into KOPT | Native document-page coordinates |
-| **Embedded detection** | EPUB, MOBI, and reflowable documents with an extracted image | Panels+ copies that decoded image into KOPT | Extracted-image coordinates |
+| **Embedded detection** | EPUB, KEPUB, MOBI, and reflowable documents with an extracted image | Panels+ copies that decoded image into KOPT | Extracted-image coordinates |
 
 Deep uses one shared KOPT/Leptonica implementation for both backends. It builds
 the grayscale image, applies KOReader's threshold, and finds 8-connected

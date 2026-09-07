@@ -49,7 +49,7 @@ end
 ---
 --- KOReader's native detector ultimately calls `KOPTContext:getPanelFromPage`,
 --- whose Lua implementation operates on `kc.src`. PDF/DjVu fill that source
---- through MuPDF's page rasterizer; EPUB/MOBI already supply a decoded
+--- through MuPDF's page rasterizer; EPUB/KEPUB/MOBI already supply a decoded
 --- BlitBuffer, so we make the equivalent 8-bit KOPT source explicitly.
 ---
 --- @return boolean ok Whether KOPT owns a completed copy of the image.

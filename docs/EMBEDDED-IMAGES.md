@@ -1,12 +1,15 @@
-# Embedded EPUB and MOBI images
+# Embedded EPUB, KEPUB, and MOBI images
 
-Panels+ supports images embedded in reflowable `.epub` and `.mobi` books.
+Panels+ supports images embedded in reflowable `.epub`, `.kepub`, and `.mobi`
+books. Kobo sync normally names KEPUB books `.kepub.epub`, which Panels+
+recognizes through its EPUB suffix; a directly named `.kepub` is also accepted
+when KOReader opens it in its rolling reader.
 Long-press an image: Panels+ extracts that bitmap, finds its panels, and opens
 the usual panel reader. At the first or last panel it turns reader pages and
 looks for the previous or next image with a usable panel layout.
 
 This is deliberately different from CBZ/CBR/PDF. Those formats expose a
-fixed document page, while EPUB/MOBI are laid out again whenever font,
+fixed document page, while EPUB/KEPUB/MOBI are laid out again whenever font,
 margins, orientation, or line spacing change.
 
 ## Embedded-image detector
@@ -29,7 +32,7 @@ image.
 
 Quick uses the same uniform sampling and panel segmentation as CBZ/CBR/PDF.
 The source differs necessarily: fixed-layout files supply a rendered document
-page, while EPUB/MOBI supply the decoded image itself. The embedded map only
+page, while EPUB/KEPUB/MOBI supply the decoded image itself. The embedded map only
 applies a shared sampling cap to exceptionally tall images, so it does not
 turn a large reflow image into an unbounded allocation.
 
@@ -49,7 +52,7 @@ implementation.
 On an image-to-image boundary, Panels+ keeps only the already-rendered current
 crop on screen. It immediately releases the old full source bitmap, its lazy
 crop closures, and any stale queued page search before scanning later reflow
-pages. This prevents one large EPUB/MOBI image from staying resident throughout
+pages. This prevents one large EPUB/KEPUB/MOBI image from staying resident throughout
 an arbitrarily long search.
 
 ## Smooth navigation
@@ -93,5 +96,5 @@ flash-free classic handoff retained for image-to-image boundaries.
 2. Consider a richer image-space outline detector for layouts the current
    higher-resolution border pass cannot separate.
 
-These alternatives are intentionally scoped to extracted EPUB/MOBI images.
+These alternatives are intentionally scoped to extracted EPUB/KEPUB/MOBI images.
 They do not change the fixed-page algorithms or add work to CBZ/CBR/PDF reads.

@@ -32,6 +32,9 @@ All notable changes to the **Panels+** KOReader plugin are documented in this fi
 
 ### Added
 
+- **KEPUB embedded-image compatibility**
+  - Panels+ now explicitly accepts direct `.kepub` files in the same rolling-reader embedded-image path as EPUB and MOBI. Kobo-synced `.kepub.epub` books remain supported through their EPUB suffix, and a regression test covers both Kobo naming conventions.
+
 - **Comic-Lettering-Aware Word Finder & OCR Segmentation**
   - **Local Line Height & Gap Thresholding**: Scoped vertical line extent detection (`row_ink`) to a local horizontal column band (~60px around tap point) in `src/_wordfinder.lua`. Prevents multi-word lines (e.g., "what's for dinner?") from merging into giant multi-line blocks that break Tesseract OCR.
   - **Tight Box Bounds**: Reduced internal padding (`PAD_RATIO` -> `0.02`) so KOReader's native `getNativeOCRWord` 30% expansion produces clean, tight crops without bleeding into neighboring words (fixing "uh?" -> "are" and "not" -> "o").

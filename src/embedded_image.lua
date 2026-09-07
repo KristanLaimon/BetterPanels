@@ -13,7 +13,7 @@ local Timing = require("src._timing")
 local UIManager = require("ui/uimanager")
 local Screen = require("device").screen
 
---- Embedded-image support for reflowable EPUB and MOBI documents.
+--- Embedded-image support for reflowable EPUB, KEPUB, and MOBI documents.
 ---
 --- KOReader's fixed-page panel API deliberately does not run in ReaderRolling.
 --- Its document API can still extract the image under a hold, so we segment
@@ -31,7 +31,11 @@ local function isSupportedDocument(document)
         return false
     end
     file = file:lower()
-    return file:match("%.epub$") ~= nil or file:match("%.mobi$") ~= nil
+    -- Kobo's usual sync name is `book.kepub.epub`, which the EPUB suffix
+    -- already accepts. Some import and cloud workflows keep the direct
+    -- `.kepub` suffix instead, so accept that spelling as well when KOReader
+    -- has opened it in ReaderRolling.
+    return file:match("%.epub$") ~= nil or file:match("%.kepub$") ~= nil or file:match("%.mobi$") ~= nil
 end
 
 local function freeImage(image)
@@ -143,7 +147,7 @@ end
 --- Render two embedded-image panels' source union at the exact scale the
 --- fixed-layout smooth transition expects. The generic camera code owns the
 --- returned buffer and frees it after copying it into its transition canvas.
---- A raw union is capped before copying: unlike document pages, EPUB/MOBI
+--- A raw union is capped before copying: unlike document pages, EPUB/KEPUB/MOBI
 --- images can be very large decoded bitmaps.
 local function renderImageUnion(source, union, zoom)
     local screen_area = Screen:getWidth() * Screen:getHeight()
@@ -200,7 +204,7 @@ end
 
 --- Copy settings for an image-only outline pass. The higher-resolution map
 --- and drawn-border search cost more memory, so this table is only created
---- after a user has opened an EPUB/MOBI image and never reaches the normal
+--- after a user has opened an EPUB/KEPUB/MOBI image and never reaches the normal
 --- document panel pipeline.
 local function outlineSettings(settings)
     local outline = {}
@@ -547,6 +551,9 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
 end
 
 --- Open Panels+ on an image embedded in a supported reflowable document.
+---
+--- This includes Kobo-synced `.kepub.epub` books and directly named `.kepub`
+--- files when a KOReader provider has opened them in ReaderRolling.
 --- Returning false deliberately lets ReaderHighlight resume its native image
 --- viewer or text-selection path when the hold was not on a usable bitmap.
 function EmbeddedImage:showEmbeddedImagePanels(reader_highlight, ges)

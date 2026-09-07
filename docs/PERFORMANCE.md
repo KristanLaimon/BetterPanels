@@ -189,7 +189,7 @@ Deliberate choices behind that table:
   the safety floor fit. This is deliberately conservative on 300MB devices.
 - **Embedded boundary searches drop the old source first.** The current crop
   stays visible, but the decoded bitmap and its lazy crop closures do not
-  survive while later EPUB/MOBI pages are searched. Queued search callbacks are
+  survive while later EPUB/KEPUB/MOBI pages are searched. Queued search callbacks are
   invalidated when the viewer or document closes.
 - **Scheduled work is cancellable.** Prefetch jobs and the prerender job are held
   by handle and unscheduled on cache clear and on close, so closures do not keep

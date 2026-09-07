@@ -73,8 +73,8 @@
 --- @field nav_transition_cross_page boolean Whether smooth navigation also animates across page boundaries.
 --- @field nav_transition_frames integer Number of discrete steps a smooth camera pan is split into.
 --- @field detector PPDetector
---- @field embedded_detector PPDetector Bitmap-only detector for embedded EPUB/MOBI images.
---- @field embedded_nav_transition_mode PPNavTransitionMode Bitmap-only smooth navigation mode for embedded EPUB/MOBI images.
+--- @field embedded_detector PPDetector Bitmap-only detector for embedded EPUB/KEPUB/MOBI images.
+--- @field embedded_nav_transition_mode PPNavTransitionMode Bitmap-only smooth navigation mode for embedded EPUB/KEPUB/MOBI images.
 --- @field panel_grid_cols integer
 --- @field panel_grid_rows integer
 --- @field panel_bleed_ratio number Fraction of extra page area "loose" crop mode reveals around each panel.
