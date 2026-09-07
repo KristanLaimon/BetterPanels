@@ -63,6 +63,7 @@ end
 --- @field page number|nil Document page number represented by `panels`.
 --- @field panels PPPanel[]|nil Ordered panel rectangles.
 --- @field image_rects PPPanel[]|nil Crop rectangles matching `_images_list`, for prerendering.
+--- @field image_union_renderer fun(union:PPRect, zoom:number):Blitbuffer|nil Optional image-space union renderer for smooth transitions.
 --- @field reader_ui table|nil Reader UI that owns the normal document gesture zones.
 --- @field panel_prerender_callback fun(viewer:PanelViewer, index:integer)|nil
 --- @field boundary_callback fun(direction:PPBoundaryDirection, viewer:PanelViewer):boolean|nil
@@ -104,6 +105,7 @@ local PanelViewer = ImageViewer:extend({
     panels = nil,
     image_rects = nil,
     embedded_source_image = nil,
+    image_union_renderer = nil,
     reader_ui = nil,
     panel_prerender_callback = nil,
     detector_cycle_callback = nil,
@@ -1480,8 +1482,12 @@ function PanelViewer:animateSwitchToImageNum(target)
         return self:switchToImageNum(target)
     end
 
-    local ok, content_image = pcall(function()
-        return self.reader_ui.document:drawPagePart(self.page, union, 0)
+    local zoom_union = canvasFitZoom(union)
+    local ok, content_image, content_image_owned = pcall(function()
+        if self.image_union_renderer then
+            return self.image_union_renderer(union, zoom_union), true
+        end
+        return self.reader_ui.document:drawPagePart(self.page, union, 0), false
     end)
     if not ok or not content_image then
         logger.warn(
@@ -1491,7 +1497,6 @@ function PanelViewer:animateSwitchToImageNum(target)
         return self:switchToImageNum(target)
     end
 
-    local zoom_union = canvasFitZoom(union)
     local scale = target_zoom / zoom_union -- applied once, below, via self.scale_factor
 
     local canvas_w = math.max(1, math.ceil(2 * half_w * zoom_union))
@@ -1511,11 +1516,14 @@ function PanelViewer:animateSwitchToImageNum(target)
         end
         return canvas
     end)
+    if content_image_owned and content_image and content_image.free then
+        content_image:free()
+    end
     if not ok_canvas or not canvas_image then
         return self:switchToImageNum(target)
     end
-    -- content_image itself is a DocCache-owned tile (never copied out), so it is
-    -- never freed here -- only its pixels were read into the newly-owned canvas.
+    -- Document renders are DocCache-owned; image-union renderers return an
+    -- owned temporary buffer, released after its pixels have been copied.
 
     local ratio_ax, ratio_ay = (ax - (bx - half_w)) / (2 * half_w), (ay - (by - half_h)) / (2 * half_h)
     local ratio_bx, ratio_by = 0.5, 0.5 -- target's center sits at the canvas center by construction
@@ -1597,7 +1605,7 @@ end
 --- @param direction PPBoundaryDirection `"next"` or `"previous"`.
 --- @return boolean|nil handled Whether the crossing was handled.
 function PanelViewer:onPanelBoundary(direction)
-    if self.nav_transition_mode == "smooth" and self.nav_transition_cross_page then
+    if self.nav_transition_mode == "smooth" and self.nav_transition_cross_page and not self.image_union_renderer then
         return self:animateBoundaryTransition(direction)
     end
     return self.boundary_callback and self.boundary_callback(direction, self)
@@ -2280,13 +2288,13 @@ function PanelViewer:replaceButtonTable()
         },
     }
 
-    -- Reflowable-document images are independent bitmaps, not regions of a
-    -- reader page. Their viewer can still be rebuilt for reading order and
-    -- crop changes, but cannot use the native detector or compose a smooth
-    -- document-page transition.
+    -- Reflowable images use an image-space renderer rather than a document
+    -- page render. Cross-image movement still stays classic.
     if self.embedded_source_image then
-        buttons[2][3].enabled = false -- smooth transition
-        buttons[3][2].enabled = false -- detector
+        -- Image-space renderers support smooth movement within the extracted
+        -- bitmap. Page-boundary movement remains classic in `onPanelBoundary`.
+        buttons[1][3].enabled = true
+        buttons[2][3].enabled = true
     end
 
     self.button_table = ButtonTable:new({

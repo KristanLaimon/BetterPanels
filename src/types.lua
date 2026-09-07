@@ -73,6 +73,8 @@
 --- @field nav_transition_cross_page boolean Whether smooth navigation also animates across page boundaries.
 --- @field nav_transition_frames integer Number of discrete steps a smooth camera pan is split into.
 --- @field detector PPDetector
+--- @field embedded_detector PPDetector Bitmap-only detector for embedded EPUB/MOBI images.
+--- @field embedded_nav_transition_mode PPNavTransitionMode Bitmap-only smooth navigation mode for embedded EPUB/MOBI images.
 --- @field panel_grid_cols integer
 --- @field panel_grid_rows integer
 --- @field panel_bleed_ratio number Fraction of extra page area "loose" crop mode reveals around each panel.
@@ -82,7 +84,7 @@
 --- @field panel_prerender boolean Warm the next panel's tile while idle.
 --- @field panel_prerender_delay number Idle seconds before warming the next panel.
 --- @field prerender_min_free_bytes integer Free bytes below which prerendering is skipped.
---- @field native_detect_min_free_bytes integer Free bytes below which native (Outline) detection is skipped entirely.
+--- @field native_detect_min_free_bytes integer Free bytes below which native K2PDFOpt detection is skipped entirely.
 --- @field full_page_panel_ratio number
 --- @field segment_target_width integer Ink-map render width in pixels.
 --- @field segment_ink_delta integer Luminance distance from background counted as ink.

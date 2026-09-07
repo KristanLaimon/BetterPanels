@@ -23,6 +23,70 @@ local logger = require("logger")
 --- @class PPNativeDetectorModule
 local NativeDetector = {}
 
+--- Return a BlitBuffer's source dimensions without assuming a particular
+--- backend's field layout.
+local function imageDimensions(image)
+    if not image then
+        return nil, nil
+    end
+    local width = image.getWidth and image:getWidth() or image.w
+    local height = image.getHeight and image:getHeight() or image.h
+    return width, height
+end
+
+--- Copy an extracted image into a K2PDFOpt source bitmap.
+---
+--- KOReader's native detector ultimately calls `KOPTContext:getPanelFromPage`,
+--- whose Lua implementation operates on `kc.src`. PDF/DjVu fill that source
+--- through MuPDF's page rasterizer; EPUB/MOBI already supply a decoded
+--- BlitBuffer, so we make the equivalent 8-bit KOPT source explicitly.
+---
+--- @return table|nil grey Temporary BlitBuffer that may be freed after KOPT
+--- has copied it, or nil on failure.
+local function copyImageToKoptSource(kc, image, Blitbuffer, ffi, k2pdfopt)
+    local width, height = imageDimensions(image)
+    if not width or not height or width <= 0 or height <= 0 then
+        return nil
+    end
+
+    -- KOPT's panel routine immediately converts its source to grayscale. Doing
+    -- that once here accepts every decoded image type and avoids format/stride
+    -- assumptions when copying into WILLUSBITMAP.
+    local grey = Blitbuffer.new(width, height, Blitbuffer.TYPE_BB8)
+    local ok, err = pcall(function()
+        grey:blitFrom(image, 0, 0, 0, 0, width, height)
+        kc.src.width = width
+        kc.src.height = height
+        kc.src.bpp = 8
+        kc.src.type = 0
+        for value = 0, 255 do
+            kc.src.red[value] = value
+            kc.src.green[value] = value
+            kc.src.blue[value] = value
+        end
+        k2pdfopt.bmp_alloc(kc.src)
+        if kc.src.data == nil then
+            error("K2PDFOpt source allocation failed")
+        end
+        local source_stride = tonumber(grey.stride)
+        local target_stride = tonumber(k2pdfopt.bmp_bytewidth(kc.src))
+        if not source_stride or not target_stride or source_stride < width or target_stride < width then
+            error("invalid grayscale bitmap stride")
+        end
+        for y = 0, height - 1 do
+            ffi.copy(kc.src.data + y * target_stride, grey.data + y * source_stride, width)
+        end
+    end)
+    if not ok then
+        logger.warn("[Panels+] could not create KOPT image source:", err)
+        if grey.free then
+            grey:free()
+        end
+        return nil
+    end
+    return grey
+end
+
 --- Add a detector probe point if its floored coordinate has not been used.
 ---
 --- @param probes PPPagePosition[] Mutable probe list.
@@ -284,6 +348,70 @@ function NativeDetector.collect(ui, settings, page, hold_pos)
     end)
     stop(string.format("%d panels from %d probes, per-probe renders", #state.panels, #probes))
     Timing.memory("native detect fallback end")
+    collectgarbage("collect")
+    return Geometry.sortReadingOrder(state.panels, settings.mode)
+end
+
+--- Collect panels from an already decoded image using KOReader's native
+--- K2PDFOpt/Leptonica panel routine.
+---
+--- `KOPTContext:getPanelFromPage()` is the same routine PDF/DjVu use. It
+--- thresholds at the native detector's value, finds 8-connected components,
+--- and selects the component under each probe point. The only adaptation here
+--- is supplying `kc.src` from a BlitBuffer instead of from a document page.
+---
+--- @param image table KOReader BlitBuffer extracted from a reflow document.
+--- @param settings PPSettings Plugin settings.
+--- @return PPPanel[] panels Ordered image-space rectangles; empty if unavailable.
+function NativeDetector.collectFromBlitbuffer(image, settings)
+    settings = settings or Settings.defaults
+    local width, height = imageDimensions(image)
+    if not width or not height or width <= 0 or height <= 0 then
+        return {}
+    end
+
+    local min_free = settings.native_detect_min_free_bytes or Settings.defaults.native_detect_min_free_bytes
+    if not Memory.hasHeadroom(min_free) then
+        Timing.memory("embedded native detect skipped: low memory (need >=%dMB)", math.floor(min_free / (1024 * 1024)))
+        return {}
+    end
+
+    -- These are loaded lazily: the plain-Lua test runner deliberately has no
+    -- KOReader FFI runtime, while production KOReader ships both libraries.
+    local ok_runtime, KOPTContext, Blitbuffer, ffi = pcall(function()
+        return require("ffi/koptcontext"), require("ffi/blitbuffer"), require("ffi")
+    end)
+    if not ok_runtime or not KOPTContext or not KOPTContext.k2pdfopt then
+        Timing.log("embedded native detect unavailable: KOPT runtime missing")
+        return {}
+    end
+
+    local probes = NativeDetector.buildProbePlan(1, { w = width, h = height }, settings)
+    local state = { panels = {}, by_key = {} }
+    local kc, grey
+    local stop = Timing.span("embedded native detect")
+    local ok, err = pcall(function()
+        kc = KOPTContext.new()
+        grey = copyImageToKoptSource(kc, image, Blitbuffer, ffi, KOPTContext.k2pdfopt)
+        if not grey then
+            return
+        end
+        runProbes(probes, nil, state, function(pos)
+            return kc:getPanelFromPage(pos)
+        end)
+    end)
+    if grey and grey.free then
+        grey:free()
+    end
+    if kc and kc.free then
+        kc:free()
+    end
+    if not ok then
+        logger.warn("[Panels+] embedded native panel detection failed:", err)
+        return {}
+    end
+
+    stop(string.format("%d panels from %d probes", #state.panels, #probes))
     collectgarbage("collect")
     return Geometry.sortReadingOrder(state.panels, settings.mode)
 end

@@ -236,7 +236,7 @@ through `performance_profile_version`.
 | `segment_shear_trigger` | `0.35` | How empty a line must already be before a slanted search is worth running |
 | `segment_shear_step` | `2` | Sample every Nth line during a slanted search |
 | `panel_grid_cols` / `panel_grid_rows` | `4` / `7` | Native detector probe grid |
-| `native_detect_min_free_bytes` | `100MB` | Free memory below which native (Outline) detection is skipped entirely |
+| `native_detect_min_free_bytes` | `100MB` | Free memory below which native K2PDFOpt detection is skipped entirely |
 | `panel_bleed_ratio` / `panel_bleed_min` | `0.08` / `8` | Crop padding in loose crop mode |
 
 ### Resolution and gutter width are one setting, not two

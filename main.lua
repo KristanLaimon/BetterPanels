@@ -252,6 +252,24 @@ function PanelsPlus:setDetector(detector)
     self:saveSettings()
 end
 
+--- Choose the bitmap-only detector used for embedded EPUB/MOBI images.
+--- This never changes the fixed-layout document detector, keeping the extra
+--- reflow-image work completely out of CBZ/CBR/PDF reads.
+--- @param detector PPDetector Requested detector; anything unknown maps to `"auto"`.
+function PanelsPlus:setEmbeddedDetector(detector)
+    self.settings.embedded_detector = (detector == "fast" or detector == "exact") and detector or "auto"
+    Timing.log("embedded detector -> " .. self.settings.embedded_detector)
+    self:saveSettings()
+end
+
+--- Choose the transition mode used only while viewing an extracted EPUB/MOBI image.
+--- @param mode PPNavTransitionMode Requested mode; anything unknown maps to `"classic"`.
+function PanelsPlus:setEmbeddedNavTransitionMode(mode)
+    self.settings.embedded_nav_transition_mode = mode == "smooth" and "smooth" or "classic"
+    Timing.log("embedded navigation transition -> " .. self.settings.embedded_nav_transition_mode)
+    self:saveSettings()
+end
+
 --- Enable or disable splitting comic panels on their drawn border strokes.
 ---
 --- Experimental, and off by default: the stroke between two edge-to-edge

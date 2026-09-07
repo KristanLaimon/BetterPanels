@@ -25,6 +25,13 @@ local Settings = {
         nav_transition_cross_page = true,
         nav_transition_frames = 8,
         detector = "auto",
+        -- Reflow-image detection has an independent preference, but its
+        -- "exact" choice uses the same K2PDFOpt panel routine as fixed pages
+        -- after adapting the extracted bitmap into a KOPT source.
+        embedded_detector = "auto",
+        -- Separate from fixed-layout navigation: embedded-image transitions
+        -- use an extracted-bitmap renderer and never document page rendering.
+        embedded_nav_transition_mode = "classic",
         panel_grid_cols = 4,
         panel_grid_rows = 7,
         panel_bleed_ratio = 0.08,

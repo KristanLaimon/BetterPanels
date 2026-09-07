@@ -2,6 +2,7 @@ local Blitbuffer = require("ffi/blitbuffer")
 local Geometry = require("src._geometry")
 local NativeDetector = require("src._nativedetector")
 local PageBitmap = require("src._pagebitmap")
+local PanelViewport = require("src._panelviewport")
 local Segmenter = require("src._segmenter")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
@@ -80,17 +81,10 @@ end
 --- @return function image_func Lazy function returning the composite Blitbuffer image.
 --- @return PPPanel image_rect Bounding rectangle used for transition math.
 local function buildNoCropImage(document, page, rect, page_size, images)
-    local rx = rect.x or 0
-    local ry = rect.y or 0
-    local rw = math.max(1, rect.w or 0)
-    local rh = math.max(1, rect.h or 0)
-    local pw = page_size and page_size.w or 0
-    local ph = page_size and page_size.h or 0
-
     local screen_w = Screen:getWidth()
     local screen_h = Screen:getHeight()
-
-    if screen_w <= 0 or screen_h <= 0 or pw <= 0 or ph <= 0 then
+    local viewport = PanelViewport.noCrop(rect, page_size)
+    if not viewport then
         local image_rect = rect
         return function()
             local img, rotate = document:drawPagePart(page, image_rect, 0)
@@ -103,31 +97,15 @@ local function buildNoCropImage(document, page, rect, page_size, images)
             image_rect
     end
 
-    local scale = math.min(screen_w / rw, screen_h / rh)
-    local box_w = screen_w / scale
-    local box_h = screen_h / scale
-    local cx = rx + rw / 2
-    local cy = ry + rh / 2
-
-    local box_x = cx - box_w / 2
-    local box_y = cy - box_h / 2
-
-    local union_x = math.max(0, box_x)
-    local union_y = math.max(0, box_y)
-    local union_right = math.min(pw, box_x + box_w)
-    local union_bottom = math.min(ph, box_y + box_h)
-    local union_w = math.max(0, union_right - union_x)
-    local union_h = math.max(0, union_bottom - union_y)
-
     local image_rect = {
-        x = union_x,
-        y = union_y,
-        w = math.max(1, union_w),
-        h = math.max(1, union_h),
+        x = viewport.union_x,
+        y = viewport.union_y,
+        w = math.max(1, viewport.union_w),
+        h = math.max(1, viewport.union_h),
     }
 
     local image_func = function()
-        if union_w <= 0 or union_h <= 0 then
+        if viewport.union_w <= 0 or viewport.union_h <= 0 then
             local canvas = Blitbuffer.new(screen_w, screen_h, Blitbuffer.TYPE_BWRGB_8888)
             canvas:fill(Blitbuffer.COLOR_WHITE)
             return canvas
@@ -148,8 +126,8 @@ local function buildNoCropImage(document, page, rect, page_size, images)
             canvas = Blitbuffer.new(canvas_w, canvas_h, content_image:getType())
             canvas:fill(Blitbuffer.COLOR_WHITE)
 
-            local paste_x = math.max(0, math.floor((union_x - box_x) * scale + 0.5))
-            local paste_y = math.max(0, math.floor((union_y - box_y) * scale + 0.5))
+            local paste_x = math.max(0, math.floor((viewport.union_x - viewport.box_x) * viewport.scale + 0.5))
+            local paste_y = math.max(0, math.floor((viewport.union_y - viewport.box_y) * viewport.scale + 0.5))
             local blit_w = math.min(content_image:getWidth(), canvas_w - paste_x)
             local blit_h = math.min(content_image:getHeight(), canvas_h - paste_y)
 

@@ -2,7 +2,10 @@ local Blitbuffer = require("ffi/blitbuffer")
 local Event = require("ui/event")
 local Geometry = require("src._geometry")
 local PageBitmap = require("src._pagebitmap")
+local PanelViewport = require("src._panelviewport")
 local PanelViewer = require("src._panelviewer")
+local RenderImage = require("ui/renderimage")
+local NativeDetector = require("src._nativedetector")
 local Segmenter = require("src._segmenter")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
@@ -55,13 +58,10 @@ local function expandRect(rect, width, height, settings)
     return { x = x, y = y, w = math.max(1, right - x), h = math.max(1, bottom - y) }
 end
 
-local function cropImage(source, rect, crop_mode)
+local function cropImage(source, rect)
     local source_w, source_h = dimensions(source)
     if not source_w or not source_h or not source.getType then
         return nil
-    end
-    if crop_mode == "none" and source.copy then
-        return source:copy()
     end
     local x = math.max(0, math.floor(rect.x + 0.5))
     local y = math.max(0, math.floor(rect.y + 0.5))
@@ -73,6 +73,99 @@ local function cropImage(source, rect, crop_mode)
     local crop = Blitbuffer.new(w, h, source:getType())
     crop:blitFrom(source, 0, 0, x, y, w, h)
     return crop
+end
+
+--- Render an extracted image using the shared no-crop panel viewport. This
+--- matches the fixed-layout behavior: the selected panel is centred in a
+--- screen-aspect canvas, with white padding only where that viewport reaches
+--- beyond the image edge.
+local function buildNoCropImage(source, rect, source_size)
+    local viewport = PanelViewport.noCrop(rect, source_size)
+    if not viewport then
+        return function()
+            return cropImage(source, rect)
+        end, rect
+    end
+
+    local image_rect = {
+        x = viewport.union_x,
+        y = viewport.union_y,
+        w = math.max(1, viewport.union_w),
+        h = math.max(1, viewport.union_h),
+    }
+    local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
+    return function()
+        if viewport.union_w <= 0 or viewport.union_h <= 0 then
+            local canvas = Blitbuffer.new(screen_w, screen_h, source:getType())
+            canvas:fill(Blitbuffer.COLOR_WHITE)
+            return canvas
+        end
+
+        local content = cropImage(source, image_rect)
+        if not content then
+            return nil
+        end
+        local canvas
+        local ok = pcall(function()
+            local scaled_w = math.max(1, math.floor(viewport.union_w * viewport.scale + 0.5))
+            local scaled_h = math.max(1, math.floor(viewport.union_h * viewport.scale + 0.5))
+            content = RenderImage:scaleBlitBuffer(content, scaled_w, scaled_h, true)
+            canvas = Blitbuffer.new(screen_w, screen_h, content:getType())
+            canvas:fill(Blitbuffer.COLOR_WHITE)
+            local paste_x = math.max(0, math.floor((viewport.union_x - viewport.box_x) * viewport.scale + 0.5))
+            local paste_y = math.max(0, math.floor((viewport.union_y - viewport.box_y) * viewport.scale + 0.5))
+            local blit_w = math.min(content:getWidth(), screen_w - paste_x)
+            local blit_h = math.min(content:getHeight(), screen_h - paste_y)
+            if blit_w > 0 and blit_h > 0 then
+                canvas:blitFrom(content, paste_x, paste_y, 0, 0, blit_w, blit_h)
+            end
+        end)
+        if content and content.free then
+            content:free()
+        end
+        if ok then
+            return canvas
+        end
+        if canvas and canvas.free then
+            canvas:free()
+        end
+        return nil
+    end,
+        image_rect
+end
+
+--- Render two embedded-image panels' source union at the exact scale the
+--- fixed-layout smooth transition expects. The generic camera code owns the
+--- returned buffer and frees it after copying it into its transition canvas.
+--- A raw union is capped before copying: unlike document pages, EPUB/MOBI
+--- images can be very large decoded bitmaps.
+local function renderImageUnion(source, union, zoom)
+    local screen_area = Screen:getWidth() * Screen:getHeight()
+    if (union.w or 0) * (union.h or 0) > screen_area * 4 then
+        Timing.log("embedded smooth transition skipped: source union is too large")
+        return nil
+    end
+
+    local content = cropImage(source, union)
+    if not content then
+        return nil
+    end
+    local scaled
+    local ok = pcall(function()
+        scaled = RenderImage:scaleBlitBuffer(
+            content,
+            math.max(1, math.ceil((union.w or 1) * zoom)),
+            math.max(1, math.ceil((union.h or 1) * zoom)),
+            true
+        )
+        content = nil
+    end)
+    if not ok then
+        freeImage(scaled)
+        freeImage(content)
+        return nil
+    end
+    return scaled
 end
 
 local function extractImage(document, pos)
@@ -98,6 +191,66 @@ local function startIndex(panels, point)
     return best_idx
 end
 
+--- Copy settings for an image-only outline pass. The higher-resolution map
+--- and drawn-border search cost more memory, so this table is only created
+--- after a user has opened an EPUB/MOBI image and never reaches the normal
+--- document panel pipeline.
+local function outlineSettings(settings)
+    local outline = {}
+    for key, value in pairs(settings) do
+        outline[key] = value
+    end
+    outline.segment_target_width = math.min(960, math.max(720, (settings.segment_target_width or 480) * 2))
+    outline.segment_border_split = true
+    -- Border strokes are useful in manga as well as western comics here. The
+    -- caller still sorts the result using the reader's requested mode.
+    outline.mode = "comic"
+    return outline
+end
+
+--- Run an image-space detector. `fast` is the normal low-memory gutter pass;
+--- `exact` uses KOReader's K2PDFOpt/Leptonica panel routine on the extracted
+--- bitmap; `auto` follows the fixed-layout policy of Fast then Native. The
+--- existing image-space outline pass remains a safe fallback when KOPT is not
+--- available or rejects the image.
+local function detectPanels(image, settings)
+    local detector = settings.embedded_detector or "auto"
+
+    local function detectWith(detector_settings)
+        local map, reason = PageBitmap.buildFromBlitbuffer(image, detector_settings)
+        if not map then
+            return nil, reason
+        end
+        local panels = Segmenter.segment(map, detector_settings)
+        local accepted, rejection = Segmenter.accept(panels, map, detector_settings)
+        if not accepted or #panels == 0 then
+            return nil, rejection
+        end
+        return panels
+    end
+
+    if detector ~= "exact" then
+        local panels, reason = detectWith(settings)
+        if panels then
+            return panels, "fast"
+        end
+        if detector == "fast" then
+            return nil, reason
+        end
+    end
+
+    local native = NativeDetector.collectFromBlitbuffer(image, settings)
+    if #native > 0 then
+        return native, "exact"
+    end
+
+    local panels, reason = detectWith(outlineSettings(settings))
+    if panels then
+        return panels, "exact"
+    end
+    return nil, reason
+end
+
 --- Open an already-extracted image. This takes ownership of `image` on
 --- success and frees it when detection rejects the bitmap.
 function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
@@ -108,16 +261,9 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         return false
     end
 
-    local map, reason = PageBitmap.buildFromBlitbuffer(image, self.settings)
-    if not map then
-        Timing.log("embedded image skipped: " .. tostring(reason))
-        freeImage(image)
-        return false
-    end
-    local panels = Segmenter.segment(map, self.settings)
-    local accepted, rejection = Segmenter.accept(panels, map, self.settings)
-    if not accepted or #panels == 0 then
-        Timing.log("embedded image segmenter rejected: " .. tostring(rejection))
+    local panels, detector_or_reason = detectPanels(image, self.settings)
+    if not panels then
+        Timing.log("embedded image detector rejected: " .. tostring(detector_or_reason))
         freeImage(image)
         return false
     end
@@ -132,9 +278,15 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
             full_page_flags,
             panel.w * panel.h >= (self.settings.full_page_panel_ratio or 0.92) * width * height
         )
-        table.insert(images, function()
-            return cropImage(image, image_rect, self.settings.crop_mode)
-        end)
+        if self.settings.crop_mode == "none" then
+            local image_func, viewport_rect = buildNoCropImage(image, panel, { w = width, h = height })
+            image_rects[#image_rects] = viewport_rect
+            table.insert(images, image_func)
+        else
+            table.insert(images, function()
+                return cropImage(image, image_rect)
+            end)
+        end
     end
 
     local viewer = PanelViewer:new({
@@ -150,16 +302,24 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         crop_mode = self.settings.crop_mode,
         margin_ratio = self.settings.panel_margin_ratio,
         bleed_ratio = self.settings.panel_bleed_ratio,
-        detector = "fast",
+        -- Display the selected strategy (Smart) rather than the internal
+        -- first pass it happened to accept (Quick).
+        detector = self.settings.embedded_detector or "auto",
         invert_swipe = self.settings.invert_swipe == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
         progress_bar_visible = self.settings.progress_bar_visible ~= false,
         hold_text_selection = false,
         image_rotation = self.settings.image_rotation,
-        -- Smooth transitions compose a document-page union. An embedded image
-        -- has no document-page rectangle, so these use the instant transition.
-        nav_transition_mode = "classic",
+        -- Smooth movement is rendered only from the extracted bitmap. This
+        -- leaves the normal document-page renderer untouched.
+        nav_transition_mode = self.settings.embedded_nav_transition_mode or "classic",
+        nav_transition_duration = self.settings.nav_transition_duration or Settings.defaults.nav_transition_duration,
+        nav_transition_cross_page = false,
+        nav_transition_frames = self.settings.nav_transition_frames or Settings.defaults.nav_transition_frames,
+        image_union_renderer = function(union, zoom)
+            return renderImageUnion(image, union, zoom)
+        end,
         buttons_visible = options.buttons_visible == true,
         boundary_callback = function(direction, current_viewer)
             return self:onEmbeddedImageBoundary(direction, current_viewer)
@@ -198,6 +358,14 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
             current_viewer:update()
             return true
         end,
+        nav_transition_toggle_callback = function(current_viewer)
+            local next_mode = self.settings.embedded_nav_transition_mode == "smooth" and "classic" or "smooth"
+            self:setEmbeddedNavTransitionMode(next_mode)
+            current_viewer.nav_transition_mode = self.settings.embedded_nav_transition_mode
+            current_viewer:replaceButtonTable()
+            current_viewer:update()
+            return true
+        end,
         image_rotation_callback = function(_, value)
             self:setImageRotation(value)
             return true
@@ -205,9 +373,21 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         more_config_callback = function(current_viewer)
             return self:showMoreConfigMenu(current_viewer)
         end,
+        detector_cycle_callback = function(current_viewer)
+            local order = { auto = "fast", fast = "exact", exact = "auto" }
+            self:setEmbeddedDetector(order[self.settings.embedded_detector or "auto"] or "auto")
+            return self:reopenEmbeddedImagePanels(current_viewer)
+        end,
     })
+    if options.replace_viewer then
+        UIManager:close(options.replace_viewer)
+    end
     UIManager:show(viewer)
-    local index = startIndex(panels, options.start_point)
+    -- A forward boundary lands at the first panel of the next image, while a
+    -- backward boundary must land at the last panel of the previous image.
+    -- Starting at panel 1 in both directions made backward page crossings
+    -- look like a broken smooth transition and skipped the expected endpoint.
+    local index = options.boundary_direction == "previous" and #panels or startIndex(panels, options.start_point)
     if index > 1 then
         viewer:switchToImageNum(index)
     end
@@ -257,23 +437,32 @@ function EmbeddedImage:findEmbeddedImageOnCurrentPage()
 end
 
 --- Turn through reflow pages until another image with a panel layout appears.
-function EmbeddedImage:openNextEmbeddedImagePage(page, direction)
+function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer)
     local ui, document = self.ui, self.ui and self.ui.document
-    if not document then
+    if not document or (viewer and viewer._panels_plus_closed) then
         return false
     end
     local image = self:findEmbeddedImageOnCurrentPage()
-    if image and self:showEmbeddedImagePanelsForImage(image) then
+    if
+        image
+        and self:showEmbeddedImagePanelsForImage(image, {
+            replace_viewer = viewer,
+            boundary_direction = direction,
+        })
+    then
         return true
     end
 
     local next_page = direction == "next" and document:getNextPage(page) or document:getPrevPage(page)
     if not next_page or next_page == 0 then
+        if viewer then
+            UIManager:close(viewer)
+        end
         return false
     end
     ui:handleEvent(Event:new("GotoPage", next_page))
     UIManager:tickAfterNext(function()
-        self:openNextEmbeddedImagePage(next_page, direction)
+        self:openNextEmbeddedImagePage(next_page, direction, viewer)
     end)
     return true
 end
@@ -292,10 +481,9 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
         return true
     end
 
-    UIManager:close(viewer)
     self.ui:handleEvent(Event:new("GotoPage", next_page))
     UIManager:tickAfterNext(function()
-        self:openNextEmbeddedImagePage(next_page, direction)
+        self:openNextEmbeddedImagePage(next_page, direction, viewer)
     end)
     return true
 end

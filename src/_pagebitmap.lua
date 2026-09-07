@@ -433,7 +433,15 @@ function PageBitmap.buildFromBlitbuffer(bb, settings)
         end
 
         local sample, kind = makeSampler(work)
+        -- Match the fixed-layout fast detector: uniform sampling preserves
+        -- gutter thickness and panel aspect ratios, so Segmenter receives the
+        -- same kind of map whether its source is a document render or an
+        -- extracted image. Only exceptionally tall reflow images raise that
+        -- shared step, bounding their image-only map without distorting it.
         local step = math.max(1, math.floor(src_w / target_width))
+        if math.floor(src_h / step) > target_width * 2 then
+            step = math.max(step, math.ceil(src_h / (target_width * 2)))
+        end
         local w = math.floor(src_w / step)
         local h = math.floor(src_h / step)
         if w < 16 or h < 16 then

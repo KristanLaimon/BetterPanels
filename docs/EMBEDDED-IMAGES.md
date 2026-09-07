@@ -9,35 +9,36 @@ This is deliberately different from CBZ/CBR/PDF. Those formats expose a
 fixed document page, while EPUB/MOBI are laid out again whenever font,
 margins, orientation, or line spacing change.
 
-## Why `Detector` is disabled
+## Embedded-image detector
 
-The **Quick** detector is available implicitly: it runs on the extracted image
-bitmap and is what opens the embedded-image panel viewer.
+The **Detector** button cycles through **Quick**, **Smart**, and **Deep**.
+It is separate from the normal document detector, so changing it does not
+alter the CBZ/CBR/PDF setting.
 
-The disabled **Detector** button normally cycles through Quick, Smart, and
-Deep. Smart and Deep are not merely different bitmap-processing settings:
-their fallback is KOReader's native panel detector. That detector needs all of
-the following:
+`Quick` uses the standard low-resolution gutter map. `Deep` copies the
+extracted bitmap into a K2PDFOpt source context, then runs KOReader's native
+Leptonica component detector with the same probe plan used for fixed-layout
+documents. `Smart` follows the same policy as CBZ/CBR/PDF: Quick first, then
+Deep only if Quick rejects the image.
 
-1. A fixed document page number and native page dimensions.
-2. A K2PDFOpt rendering context for that page.
-3. Rectangles in the same page coordinate system that `drawPagePart()` uses.
+Quick uses the same uniform sampling and panel segmentation as CBZ/CBR/PDF.
+The source differs necessarily: fixed-layout files supply a rendered document
+page, while EPUB/MOBI supply the decoded image itself. The embedded map only
+applies a shared sampling cap to exceptionally tall images, so it does not
+turn a large reflow image into an unbounded allocation.
 
-An EPUB/MOBI hold supplies Panels+ with the decoded image only. It does not
-supply a stable rectangle for that image in the reflowed document. Its
-position can change after any typography setting changes, and the native
-K2PDFOpt path is not available for CREngine reflow pages. Calling the native
-detector anyway would either return no panels or return rectangles that cannot
-be used to crop the extracted bitmap safely.
+For an embedded image the native detector's coordinates are image-space, not
+reflow-page-space, so its returned rectangles can be cropped directly from the
+retained bitmap. This is the key adaptation: a reflow page cannot be sent to
+the fixed-document renderer, but its extracted image can be sent to the same
+K2PDFOpt/Leptonica routine.
 
-So this is possible in a broader sense, but it would be a **new image-space
-outline detector**, not KOReader's existing Deep detector. It could inspect
-the extracted bitmap directly, much like Quick does, and provide a second
-algorithm for difficult layouts. That is a reasonable future feature, but it
-needs its own implementation, tuning, memory limits, and image fixtures; it
-cannot safely be enabled by reusing the current native detector.
+Deep makes a grayscale K2PDFOpt copy of the extracted image and is guarded by
+the same free-memory threshold as fixed-layout native detection. If K2PDFOpt
+is unavailable or finds no panel, the former image-space Outline pass is used
+as a fallback; it is not the primary Deep implementation.
 
-## Why `Nav. Smooth` is disabled
+## Smooth navigation
 
 For fixed-layout documents, smooth navigation renders the union of the old and
 new panel rectangles from the document page, places that result on a temporary
@@ -49,20 +50,18 @@ document:drawPagePart(page, union_of_panel_rectangles, 0)
 
 An embedded image has no `page`/`drawPagePart()` coordinate pair. Passing its
 image-space rectangles to that API would crop unrelated text-page content, or
-fail. This is why enabling the existing option would be misleading and could
-produce a bad render.
+fail. Embedded images instead render the union directly from their retained
+decoded bitmap, then use the same camera-pan logic as fixed-layout panels.
 
-Unlike Deep detection, **smooth navigation inside one embedded image is
-plausible**. Panels+ retains the decoded source bitmap, so a dedicated
-image-space implementation could crop the union from that bitmap and reuse
-the existing camera animation. It should be implemented behind a renderer
-callback rather than special-casing document drawing in `PanelViewer`.
+The **Nav. Smooth** control is enabled for panels on the same embedded image.
+Its preference is separate from fixed-layout documents, and a source-union cap
+falls back to an instant panel switch before making a large temporary bitmap.
 
 Smooth animation **between images** is a separate, more expensive problem:
 the images may be on different reflow pages, have unrelated sizes, and require
 a page turn plus an asynchronous search before the next image is known. The
-safe first scope would therefore be smooth movement between panels of the same
-image, with classic movement retained for image-to-image boundaries.
+safe scope is smooth movement between panels of the same image, with the
+flash-free classic handoff retained for image-to-image boundaries.
 
 ## What remains available
 
@@ -75,12 +74,10 @@ image, with classic movement retained for image-to-image boundaries.
 
 ## Practical roadmap
 
-1. Add an image-space renderer callback to `PanelViewer`, then implement
-   same-image smooth transitions with existing memory safeguards.
-2. Add a second, image-space detector for layouts Quick cannot separate.
-3. Only expose it as an EPUB/MOBI detector choice after it has fixtures for
-   manga, comics, dark pages, SVG/raster edge cases, and small inline images.
+1. Add image fixtures for manga, comics, dark pages, SVG/raster edge cases,
+   and small inline images to tune Outline further.
+2. Consider a richer image-space outline detector for layouts the current
+   higher-resolution border pass cannot separate.
 
-The current disabled controls are therefore intentional capability boundaries,
-not a claim that the features are impossible. They prevent fixed-page code
-from operating on a reflow image with incompatible coordinates.
+These alternatives are intentionally scoped to extracted EPUB/MOBI images.
+They do not change the fixed-page algorithms or add work to CBZ/CBR/PDF reads.
