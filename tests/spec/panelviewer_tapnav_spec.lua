@@ -47,6 +47,26 @@ describe("PanelViewer:getNextTapSide", function()
     end)
 end)
 
+describe("PanelViewer:getNextSwipeDirection", function()
+    it("is west in comic mode", function()
+        local viewer = PanelViewer:new({ reading_mode = "comic" })
+        assert.equals("west", viewer:getNextSwipeDirection())
+    end)
+
+    it("is east in manga mode", function()
+        local viewer = PanelViewer:new({ reading_mode = "manga" })
+        assert.equals("east", viewer:getNextSwipeDirection())
+    end)
+
+    it("inverts with invert_swipe", function()
+        local viewer = PanelViewer:new({ reading_mode = "comic", invert_swipe = true })
+        assert.equals("east", viewer:getNextSwipeDirection())
+
+        viewer = PanelViewer:new({ reading_mode = "manga", invert_swipe = true })
+        assert.equals("west", viewer:getNextSwipeDirection())
+    end)
+end)
+
 describe("PanelViewer:onTap side navigation", function()
     it("advances to next panel on a right-side tap in comic mode", function()
         local viewer = newViewer({ reading_mode = "comic" })
@@ -144,7 +164,7 @@ describe("PanelViewer:onSwipe swipe_navigation toggle", function()
     it("does not navigate west/east when swipe_navigation is off", function()
         local viewer = newSwipeViewer({ swipe_navigation = false })
 
-        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
+        viewer:onSwipe(nil, { direction = "west", pos = { x = 500, y = 400 } })
 
         assert.is_false(viewer.onShowNextImage:called())
         assert.is_false(viewer.onShowPrevImage:called())
@@ -153,9 +173,18 @@ describe("PanelViewer:onSwipe swipe_navigation toggle", function()
     it("still navigates west/east when swipe_navigation is on (default)", function()
         local viewer = newSwipeViewer()
 
-        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
+        viewer:onSwipe(nil, { direction = "west", pos = { x = 500, y = 400 } })
 
         assert.is_true(viewer.onShowNextImage:called())
         assert.is_false(viewer.onShowPrevImage:called())
+    end)
+
+    it("navigates to prev on opposite swipe direction", function()
+        local viewer = newSwipeViewer()
+
+        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
+
+        assert.is_true(viewer.onShowPrevImage:called())
+        assert.is_false(viewer.onShowNextImage:called())
     end)
 end)

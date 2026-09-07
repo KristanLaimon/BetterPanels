@@ -643,12 +643,8 @@ function ViewerController:resolveBoundaryTarget(direction, current_viewer)
     end
 
     local start_idx = direction == "next" and 1 or #cached_panels
-    local next_images, image_rects, full_page_flags = PanelCollector.buildImages(
-        self.ui,
-        next_page,
-        cached_panels,
-        self.settings
-    )
+    local next_images, image_rects, full_page_flags =
+        PanelCollector.buildImages(self.ui, next_page, cached_panels, self.settings)
     return {
         next_page = next_page,
         panels = cached_panels,
