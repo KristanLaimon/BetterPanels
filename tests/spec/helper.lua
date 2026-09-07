@@ -276,7 +276,7 @@ end)
 -- table, so specs can hand-invoke a stored `ok_callback`/`cancel_callback`
 -- without a real widget/rendering stack, and without `UIManager:show` (a
 -- no-op stub) ever calling them itself.
-for _, name in ipairs({ "ui/widget/confirmbox", "ui/widget/notification" }) do
+for _, name in ipairs({ "ui/widget/confirmbox", "ui/widget/notification", "ui/widget/menu" }) do
     preload(name, function()
         local Widget = {}
         function Widget:new(o)

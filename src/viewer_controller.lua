@@ -577,6 +577,11 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         nav_transition_frames_callback = function(current_viewer, frames)
             return self:setViewerNavTransitionFrames(current_viewer, frames)
         end,
+        nav_transition_cross_page_callback = function(current_viewer, enabled)
+            self:setNavTransitionCrossPage(enabled)
+            current_viewer.nav_transition_cross_page = self.settings.nav_transition_cross_page == true
+            return true
+        end,
         nav_transition_options_callback = function(current_viewer)
             return self:showNavTransitionOptionsMenu(current_viewer)
         end,

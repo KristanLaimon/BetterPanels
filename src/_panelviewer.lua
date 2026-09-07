@@ -121,6 +121,7 @@ local PanelViewer = ImageViewer:extend({
     nav_transition_toggle_callback = nil,
     nav_transition_duration_callback = nil,
     nav_transition_frames_callback = nil,
+    nav_transition_cross_page_callback = nil,
     nav_transition_options_callback = nil,
     nav_boundary_peek_callback = nil,
     nav_boundary_commit_callback = nil,
@@ -2127,6 +2128,66 @@ function PanelViewer:onAdjustNavTransitionFrames(on_committed)
     return true
 end
 
+--- Show a multi-options menu popup for navigation transition configuration.
+---
+--- @return boolean handled Always true for button hold-callback dispatch.
+function PanelViewer:onShowNavTransitionOptionsMenu()
+    local Menu = require("ui/widget/menu")
+    local viewer = self
+    local menu
+
+    local menu_items = {
+        {
+            text = _("Pan animation duration..."),
+            callback = function()
+                viewer:onAdjustNavTransitionDuration()
+            end,
+            help_text = _("Adjust how long the camera pan between panels takes in milliseconds."),
+        },
+        {
+            text = _("Animate page-to-page transitions (Actual: ") .. (viewer.nav_transition_cross_page == true and _(
+                "true"
+            ) or _("false")) .. ")",
+            checked_func = function()
+                return viewer.nav_transition_cross_page == true
+            end,
+            callback = function()
+                local new_val = not viewer.nav_transition_cross_page
+                viewer.nav_transition_cross_page = new_val
+                if viewer.nav_transition_cross_page_callback then
+                    viewer.nav_transition_cross_page_callback(viewer, new_val)
+                end
+                UIManager:close(menu)
+                viewer:onShowNavTransitionOptionsMenu()
+            end,
+            help_text = _(
+                "Also pan across the boundary between the last panel of a page and the first panel of the next, instead of cutting instantly. Only animates when the adjacent page has already been detected in the background; otherwise the crossing stays an instant cut."
+            ),
+        },
+        {
+            text = _("Transition frames (Actual: ") .. tostring(
+                viewer.nav_transition_frames or NAV_TRANSITION_STEPS_DEFAULT
+            ) .. _(" fps)"),
+            callback = function()
+                viewer:onAdjustNavTransitionFrames(function()
+                    UIManager:close(menu)
+                    viewer:onShowNavTransitionOptionsMenu()
+                end)
+            end,
+            help_text = _(
+                "How many discrete steps the smooth camera pan between panels is split into. More frames look smoother but schedule more work per transition."
+            ),
+        },
+    }
+
+    menu = Menu:new({
+        title = _("Navigation Transition Settings"),
+        item_table = menu_items,
+    })
+    UIManager:show(menu)
+    return true
+end
+
 --- Open the rotation picker: one 4-way control for KOReader's real screen
 --- rotation, one for this plugin's own zoomed-view rotation.
 ---
@@ -2334,7 +2395,7 @@ function PanelViewer:replaceButtonTable()
                         if self.nav_transition_options_callback then
                             self.nav_transition_options_callback(self)
                         else
-                            self:onAdjustNavTransitionDuration()
+                            self:onShowNavTransitionOptionsMenu()
                         end
                     end
                 end,

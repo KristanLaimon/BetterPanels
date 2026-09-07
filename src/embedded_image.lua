@@ -386,6 +386,24 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
             current_viewer:update()
             return true
         end,
+        nav_transition_duration_callback = function(current_viewer, seconds)
+            self:setNavTransitionDuration(seconds)
+            current_viewer.nav_transition_duration = self.settings.nav_transition_duration
+            return true
+        end,
+        nav_transition_frames_callback = function(current_viewer, frames)
+            self:setNavTransitionFrames(frames)
+            current_viewer.nav_transition_frames = self.settings.nav_transition_frames
+            return true
+        end,
+        nav_transition_cross_page_callback = function(current_viewer, enabled)
+            self:setNavTransitionCrossPage(enabled)
+            current_viewer.nav_transition_cross_page = self.settings.nav_transition_cross_page == true
+            return true
+        end,
+        nav_transition_options_callback = function(current_viewer)
+            return self:showNavTransitionOptionsMenu(current_viewer)
+        end,
         image_rotation_callback = function(_, value)
             self:setImageRotation(value)
             return true

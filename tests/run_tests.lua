@@ -32,6 +32,7 @@ local spec_modules = {
     "tests.spec.wordfinder_spec",
     "tests.spec.pagebitmap_spec",
     "tests.spec.segmenter_spec",
+    "tests.spec.panelviewer_navtransition_spec",
 }
 
 for _, mod in ipairs(spec_modules) do
