@@ -153,12 +153,12 @@ local function collectKoptComponents(kc)
     local pixs, pixg, pix_inverted, pix_thresholded, boxes
     local function destroyPix(pix)
         if pix ~= nil then
-            leptonica.pixDestroy(ffi.new("PIX *[1]", pix))
+            pcall(leptonica.pixDestroy, ffi.new("PIX *[1]", pix))
         end
     end
     local function destroyBoxes(boxa)
         if boxa ~= nil then
-            leptonica.boxaDestroy(ffi.new("BOXA *[1]", boxa))
+            pcall(leptonica.boxaDestroy, ffi.new("BOXA *[1]", boxa))
         end
     end
 
@@ -481,6 +481,11 @@ function NativeDetector.collect(ui, settings, page, hold_pos)
             math.ceil(working_set / (1024 * 1024))
         )
         stop("skipped fallback: low memory")
+        return {}
+    end
+
+    if not document.getPanelFromPage then
+        stop("skipped fallback: document has no getPanelFromPage")
         return {}
     end
 

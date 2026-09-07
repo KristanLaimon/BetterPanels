@@ -44,11 +44,11 @@ local PageBitmap = {}
 --- @param document table KOReader document object.
 --- @return string|nil reason Blocking reason, or nil when usable.
 function PageBitmap.getBlockReason(document)
-    local configurable = document.configurable
-    if not configurable then
-        return "no configurable"
+    if not document then
+        return "no document"
     end
-    if configurable.text_wrap == 1 then
+    local configurable = document.configurable
+    if configurable and configurable.text_wrap == 1 then
         return "reflow mode"
     end
     local koptinterface = document.koptinterface
@@ -101,34 +101,61 @@ end
 --- @param bb table Rendered blitbuffer.
 --- @return table bb Buffer to sample.
 --- @return table|nil owned Buffer the caller must free, if one was allocated.
+--- @return boolean is_rgb Whether the sampled buffer is in an RGB colour space.
 local function normalizeForSampling(bb)
-    if bb:getRotation() == 0 and bb:getInverse() == 0 then
-        return bb, nil
-    end
+    local is_rgb = bb:isRGB()
+    if is_rgb then
+        local btype = bb:getType()
+        if
+            (btype == Blitbuffer.TYPE_BBRGB32 or btype == Blitbuffer.TYPE_BBRGB24 or btype == Blitbuffer.TYPE_BBRGB16)
+            and bb:getRotation() == 0
+            and bb:getInverse() == 0
+        then
+            return bb, nil, true
+        end
 
-    local ok, normalized = pcall(function()
-        local target_type = bb:isRGB() and Blitbuffer.TYPE_BBRGB32 or Blitbuffer.TYPE_BB8
-        local target = Blitbuffer.new(bb.w, bb.h, target_type)
-        target:blitFrom(bb, 0, 0, 0, 0, bb.w, bb.h)
-        return target
-    end)
-    if ok and normalized then
-        return normalized, normalized
+        local ok, normalized = pcall(function()
+            local target = Blitbuffer.new(bb.w, bb.h, Blitbuffer.TYPE_BBRGB32)
+            target:blitFrom(bb, 0, 0, 0, 0, bb.w, bb.h)
+            return target
+        end)
+        if ok and normalized then
+            return normalized, normalized, true
+        end
+        return bb, nil, true
+    else
+        -- Normalize all non-RGB formats (e.g. 4bpp e-ink BB4, monochrome, inverted,
+        -- rotated) to standard 8bpp greyscale in C via blitFrom so pixel sampling
+        -- never falls back to allocating Color objects in Lua.
+        if bb:getType() == Blitbuffer.TYPE_BB8 and bb:getRotation() == 0 and bb:getInverse() == 0 then
+            return bb, nil, false
+        end
+
+        local ok, normalized = pcall(function()
+            local target = Blitbuffer.new(bb.w, bb.h, Blitbuffer.TYPE_BB8)
+            target:blitFrom(bb, 0, 0, 0, 0, bb.w, bb.h)
+            return target
+        end)
+        if ok and normalized then
+            return normalized, normalized, false
+        end
+        return bb, nil, false
     end
-    return bb, nil
 end
 
 --- Build the fastest available RGB accessor for a blitbuffer.
 ---
 --- Reading raw pixels directly avoids a Lua colour object allocation per pixel,
---- which matters across ~150k of them. The generic accessor stays as a fallback
---- in case the raw pointer is unavailable.
+--- which matters across ~150k of them.
 ---
 --- @param bb table Buffer to sample.
 --- @return fun(x:integer, y:integer):integer,integer,integer sample RGB accessor.
 --- @return string kind Accessor name, for timing logs.
+--- @return ffi.cdata*|nil raw_data Raw pointer if direct buffer access is possible.
+--- @return integer|nil stride Stride or pixel_stride.
 local function makeSampler(bb)
-    if bb:getType() == Blitbuffer.TYPE_BB8 then
+    local btype = bb:getType()
+    if btype == Blitbuffer.TYPE_BB8 then
         local ok, data = pcall(ffi.cast, "uint8_t *", bb.data)
         if ok and data ~= nil then
             local stride = tonumber(bb.stride)
@@ -136,30 +163,36 @@ local function makeSampler(bb)
                 local value = data[y * stride + x]
                 return value, value, value
             end,
-                "bb8"
+                "bb8",
+                data,
+                stride
         end
     end
 
     local pixel_stride = tonumber(bb.pixel_stride)
-    if bb:getType() == Blitbuffer.TYPE_BBRGB24 then
+    if btype == Blitbuffer.TYPE_BBRGB24 then
         local ok, data = pcall(ffi.cast, "ColorRGB24 *", bb.data)
         if ok and data ~= nil then
             return function(x, y)
                 local pixel = data[y * pixel_stride + x]
                 return pixel.r, pixel.g, pixel.b
             end,
-                "rgb24"
+                "rgb24",
+                data,
+                pixel_stride
         end
-    elseif bb:getType() == Blitbuffer.TYPE_BBRGB32 then
+    elseif btype == Blitbuffer.TYPE_BBRGB32 then
         local ok, data = pcall(ffi.cast, "ColorRGB32 *", bb.data)
         if ok and data ~= nil then
             return function(x, y)
                 local pixel = data[y * pixel_stride + x]
                 return pixel.r, pixel.g, pixel.b
             end,
-                "rgb32"
+                "rgb32",
+                data,
+                pixel_stride
         end
-    elseif bb:getType() == Blitbuffer.TYPE_BBRGB16 then
+    elseif btype == Blitbuffer.TYPE_BBRGB16 then
         local ok, data = pcall(ffi.cast, "ColorRGB16 *", bb.data)
         if ok and data ~= nil then
             return function(x, y)
@@ -169,7 +202,9 @@ local function makeSampler(bb)
                 local b = value % 32
                 return r * 8 + math.floor(r / 4), g * 4 + math.floor(g / 16), b * 8 + math.floor(b / 4)
             end,
-                "rgb16"
+                "rgb16",
+                data,
+                pixel_stride
         end
     end
 
@@ -177,7 +212,9 @@ local function makeSampler(bb)
         local color = bb:getPixel(x, y):getColorRGB24()
         return color.r, color.g, color.b
     end,
-        "generic"
+        "generic",
+        nil,
+        nil
 end
 
 --- Return an RGB colour's luminance using KOReader's own ColorRGB conversion.
@@ -202,6 +239,52 @@ local function colourDistance(r, g, b, background_r, background_g, background_b)
     return math.max(dr, dg, db)
 end
 
+--- Fast background estimation for 8bpp greyscale images.
+--- Reads directly from memory with zero closures or allocations.
+--- Subsamples using step so border inspection takes <0.2ms.
+local function estimateBackgroundGrey(data, stride, w, h, step)
+    step = step or 1
+    local histogram = {}
+    for value = 0, 255 do
+        histogram[value] = 0
+    end
+
+    local grid_w = math.floor(w / step)
+    local grid_h = math.floor(h / step)
+    local ring = math.max(1, math.floor(math.min(grid_w, grid_h) * 0.01))
+    local total = 0
+
+    local function tally(grid_x, grid_y)
+        local val = data[(grid_y * step) * stride + (grid_x * step)]
+        histogram[val] = histogram[val] + 1
+        total = total + 1
+    end
+
+    for offset = 0, ring - 1 do
+        for x = 0, grid_w - 1 do
+            tally(x, offset)
+            tally(x, grid_h - 1 - offset)
+        end
+        for y = ring, grid_h - 1 - ring do
+            tally(offset, y)
+            tally(grid_w - 1 - offset, y)
+        end
+    end
+
+    if total == 0 then
+        return 255
+    end
+
+    local half, seen = total / 2, 0
+    for value = 0, 255 do
+        seen = seen + histogram[value]
+        if seen >= half then
+            return value
+        end
+    end
+    return 255
+end
+
 --- Estimate the page background colour from its outer border.
 ---
 --- The border of a comic page is the page's own paper (or its inked backdrop),
@@ -211,20 +294,24 @@ end
 --- @param sample fun(x:integer, y:integer):integer,integer,integer RGB accessor.
 --- @param w integer Source width.
 --- @param h integer Source height.
+--- @param step integer|nil Grid step (defaults to 1).
 --- @return integer r Median border red channel (0-255).
 --- @return integer g Median border green channel (0-255).
 --- @return integer b Median border blue channel (0-255).
-local function estimateBackground(sample, w, h)
+local function estimateBackground(sample, w, h, step)
+    step = step or 1
     local red, green, blue = {}, {}, {}
     for value = 0, 255 do
         red[value], green[value], blue[value] = 0, 0, 0
     end
 
-    local ring = math.max(1, math.floor(math.min(w, h) * 0.01))
+    local grid_w = math.floor(w / step)
+    local grid_h = math.floor(h / step)
+    local ring = math.max(1, math.floor(math.min(grid_w, grid_h) * 0.01))
     local total = 0
 
-    local function tally(x, y)
-        local r, g, b = sample(x, y)
+    local function tally(grid_x, grid_y)
+        local r, g, b = sample(grid_x * step, grid_y * step)
         red[r] = red[r] + 1
         green[g] = green[g] + 1
         blue[b] = blue[b] + 1
@@ -232,13 +319,13 @@ local function estimateBackground(sample, w, h)
     end
 
     for offset = 0, ring - 1 do
-        for x = 0, w - 1 do
+        for x = 0, grid_w - 1 do
             tally(x, offset)
-            tally(x, h - 1 - offset)
+            tally(x, grid_h - 1 - offset)
         end
-        for y = ring, h - 1 - ring do
+        for y = ring, grid_h - 1 - ring do
             tally(offset, y)
-            tally(w - 1 - offset, y)
+            tally(grid_w - 1 - offset, y)
         end
     end
 
@@ -260,66 +347,85 @@ local function estimateBackground(sample, w, h)
     return median(red), median(green), median(blue)
 end
 
---- Build a page's binary ink map.
----
---- @param document table KOReader document object.
---- @param page number Document page number.
---- @param settings PPSettings Plugin settings.
---- @return PPPageMap|nil map Ink map, or nil when the page cannot be mapped.
---- @return string|nil reason Failure reason when `map` is nil.
-function PageBitmap.build(document, page, settings)
-    settings = settings or Settings.defaults
-
-    local blocked = PageBitmap.getBlockReason(document)
-    if blocked then
-        return nil, blocked
-    end
-
-    local stop = Timing.span("page bitmap")
-    local target_width = settings.segment_target_width or Settings.defaults.segment_target_width
+--- Build an ink map from normalized buffer data.
+--- Fast path for greyscale (BB8 raw pointer): zero closure calls, direct memory access,
+--- single integer difference.
+--- Colour path: inlined per-channel delta, no math.abs/max closure overhead.
+local function buildMapFromBuffer(
+    work,
+    sample,
+    kind,
+    raw_data,
+    stride,
+    is_rgb,
+    native_w,
+    native_h,
+    settings,
+    step,
+    w,
+    h
+)
     local ink_delta = settings.segment_ink_delta or Settings.defaults.segment_ink_delta
-
-    -- Manga pages are near-uniformly two-tone, so a background-relative ink
-    -- map already separates panels cleanly there. Western comics routinely
-    -- bleed differently-coloured or dark panels edge to edge with no blank
-    -- gutter at all, only a drawn black border stroke between them -- which
-    -- needs its own absolute (not background-relative) signal to find.
-    --
-    -- Only built when the reader has opted into splitting on those strokes
-    -- (see `src._segmenter` for why that is off by default). Skipping it drops
-    -- a per-cell comparison and a whole w*h allocation from every page.
     local detect_borders = settings.mode == "comic" and settings.segment_border_split == true
     local border_luminance_max = settings.segment_border_luminance_max or Settings.defaults.segment_border_luminance_max
 
-    local map, reason, owned
-    local ok, err = pcall(function()
-        local bb, native = renderSmall(document, page, target_width)
-        if not bb then
-            reason = "render failed"
-            return
+    local src_w, src_h = work.w, work.h
+    local data = ffi.new("uint8_t[?]", w * h)
+    local border = detect_borders and ffi.new("uint8_t[?]", w * h) or nil
+    local ink = 0
+    local border_cells = 0
+    local background, background_r, background_g, background_b
+
+    if not is_rgb and kind == "bb8" and raw_data ~= nil and stride ~= nil then
+        -- Fast greyscale path (manga / e-ink / black-and-white artwork)
+        local bg_val = estimateBackgroundGrey(raw_data, stride, src_w, src_h, step)
+        background = bg_val
+        background_r, background_g, background_b = bg_val, bg_val, bg_val
+
+        if border then
+            for y = 0, h - 1 do
+                local src_y = y * step
+                local row_offset = src_y * stride
+                local map_row = y * w
+                for x = 0, w - 1 do
+                    local val = raw_data[row_offset + x * step]
+                    local delta = val - bg_val
+                    if delta < 0 then
+                        delta = -delta
+                    end
+                    local idx = map_row + x
+                    if delta > ink_delta then
+                        data[idx] = 1
+                        ink = ink + 1
+                    end
+                    if val <= border_luminance_max then
+                        border[idx] = 1
+                        border_cells = border_cells + 1
+                    end
+                end
+            end
+        else
+            for y = 0, h - 1 do
+                local src_y = y * step
+                local row_offset = src_y * stride
+                local map_row = y * w
+                for x = 0, w - 1 do
+                    local val = raw_data[row_offset + x * step]
+                    local delta = val - bg_val
+                    if delta < 0 then
+                        delta = -delta
+                    end
+                    if delta > ink_delta then
+                        data[map_row + x] = 1
+                        ink = ink + 1
+                    end
+                end
+            end
         end
-
-        local work
-        work, owned = normalizeForSampling(bb)
-        local src_w, src_h = work.w, work.h
-        local sample, kind = makeSampler(work)
-
-        -- Guard against a render path that ignored our zoom: subsample instead
-        -- of scanning a full-resolution buffer cell by cell.
-        local step = math.max(1, math.floor(src_w / target_width))
-        local w = math.floor(src_w / step)
-        local h = math.floor(src_h / step)
-        if w < 16 or h < 16 then
-            reason = "page too small to map"
-            return
-        end
-
-        local background_r, background_g, background_b = estimateBackground(sample, src_w, src_h)
-        local background = luminance(background_r, background_g, background_b)
-        local data = ffi.new("uint8_t[?]", w * h)
-        local border = detect_borders and ffi.new("uint8_t[?]", w * h) or nil
-        local ink = 0
-        local border_cells = 0
+    else
+        -- Colour-aware path (Western colour comics / colour displays)
+        background_r, background_g, background_b = estimateBackground(sample, src_w, src_h, step)
+        background = luminance(background_r, background_g, background_b)
 
         if border then
             for y = 0, h - 1 do
@@ -327,7 +433,19 @@ function PageBitmap.build(document, page, settings)
                 local row = y * w
                 for x = 0, w - 1 do
                     local r, g, b = sample(x * step, src_y)
-                    local delta = colourDistance(r, g, b, background_r, background_g, background_b)
+                    local dr = r - background_r
+                    if dr < 0 then
+                        dr = -dr
+                    end
+                    local dg = g - background_g
+                    if dg < 0 then
+                        dg = -dg
+                    end
+                    local db = b - background_b
+                    if db < 0 then
+                        db = -db
+                    end
+                    local delta = dr > dg and (dr > db and dr or db) or (dg > db and dg or db)
                     local idx = row + x
                     if delta > ink_delta then
                         data[idx] = 1
@@ -345,7 +463,19 @@ function PageBitmap.build(document, page, settings)
                 local row = y * w
                 for x = 0, w - 1 do
                     local r, g, b = sample(x * step, src_y)
-                    local delta = colourDistance(r, g, b, background_r, background_g, background_b)
+                    local dr = r - background_r
+                    if dr < 0 then
+                        dr = -dr
+                    end
+                    local dg = g - background_g
+                    if dg < 0 then
+                        dg = -dg
+                    end
+                    local db = b - background_b
+                    if db < 0 then
+                        db = -db
+                    end
+                    local delta = dr > dg and (dr > db and dr or db) or (dg > db and dg or db)
                     if delta > ink_delta then
                         data[row + x] = 1
                         ink = ink + 1
@@ -353,21 +483,72 @@ function PageBitmap.build(document, page, settings)
                 end
             end
         end
+    end
 
-        map = {
-            w = w,
-            h = h,
-            data = data,
-            border = border,
-            ink = ink,
-            native_w = native.w,
-            native_h = native.h,
-            scale_x = native.w / w,
-            scale_y = native.h / h,
-            background = background,
-            background_color = { r = background_r, g = background_g, b = background_b },
-            inverted = background < 128,
-        }
+    return {
+        w = w,
+        h = h,
+        data = data,
+        border = border,
+        ink = ink,
+        native_w = native_w,
+        native_h = native_h,
+        scale_x = native_w / w,
+        scale_y = native_h / h,
+        background = background,
+        background_color = { r = background_r, g = background_g, b = background_b },
+        inverted = background < 128,
+    },
+        border_cells,
+        background_r,
+        background_g,
+        background_b
+end
+
+--- Build a page's binary ink map.
+---
+--- @param document table KOReader document object.
+--- @param page number Document page number.
+--- @param settings PPSettings Plugin settings.
+--- @return PPPageMap|nil map Ink map, or nil when the page cannot be mapped.
+--- @return string|nil reason Failure reason when `map` is nil.
+function PageBitmap.build(document, page, settings)
+    settings = settings or Settings.defaults
+
+    local blocked = PageBitmap.getBlockReason(document)
+    if blocked then
+        return nil, blocked
+    end
+
+    local stop = Timing.span("page bitmap")
+    local target_width = settings.segment_target_width or Settings.defaults.segment_target_width
+
+    local map, reason, owned
+    local ok, err = pcall(function()
+        local bb, native = renderSmall(document, page, target_width)
+        if not bb then
+            reason = "render failed"
+            return
+        end
+
+        local work, is_rgb
+        work, owned, is_rgb = normalizeForSampling(bb)
+        local src_w, src_h = work.w, work.h
+        local sample, kind, raw_data, stride = makeSampler(work)
+
+        -- Guard against a render path that ignored our zoom: subsample instead
+        -- of scanning a full-resolution buffer cell by cell.
+        local step = math.max(1, math.floor(src_w / target_width))
+        local w = math.floor(src_w / step)
+        local h = math.floor(src_h / step)
+        if w < 16 or h < 16 then
+            reason = "page too small to map"
+            return
+        end
+
+        local border_cells, bg_r, bg_g, bg_b
+        map, border_cells, bg_r, bg_g, bg_b =
+            buildMapFromBuffer(work, sample, kind, raw_data, stride, is_rgb, native.w, native.h, settings, step, w, h)
         local free_mb = Timing.enabled and Timing.freeMB() or nil
         stop(
             string.format(
@@ -375,12 +556,12 @@ function PageBitmap.build(document, page, settings)
                 w,
                 h,
                 kind,
-                background_r,
-                background_g,
-                background_b,
+                bg_r,
+                bg_g,
+                bg_b,
                 map.inverted and " inverted" or "",
-                math.floor(ink * 100 / (w * h)),
-                border and string.format(" border=%d%%", math.floor(border_cells * 100 / (w * h))) or "",
+                math.floor(map.ink * 100 / (w * h)),
+                map.border and string.format(" border=%d%%", math.floor(border_cells * 100 / (w * h))) or "",
                 free_mb and (" free=" .. free_mb .. "MB") or ""
             )
         )
@@ -418,21 +599,18 @@ function PageBitmap.buildFromBlitbuffer(bb, settings)
 
     local stop = Timing.span("embedded image bitmap")
     local target_width = settings.segment_target_width or Settings.defaults.segment_target_width
-    local ink_delta = settings.segment_ink_delta or Settings.defaults.segment_ink_delta
-    local detect_borders = settings.mode == "comic" and settings.segment_border_split == true
-    local border_luminance_max = settings.segment_border_luminance_max or Settings.defaults.segment_border_luminance_max
 
     local map, reason, owned
     local ok, err = pcall(function()
-        local work
-        work, owned = normalizeForSampling(bb)
+        local work, is_rgb
+        work, owned, is_rgb = normalizeForSampling(bb)
         local src_w, src_h = work.w, work.h
         if not src_w or not src_h or src_w <= 0 or src_h <= 0 then
             reason = "image has no dimensions"
             return
         end
 
-        local sample, kind = makeSampler(work)
+        local sample, kind, raw_data, stride = makeSampler(work)
         -- Match the fixed-layout fast detector: uniform sampling preserves
         -- gutter thickness and panel aspect ratios, so Segmenter receives the
         -- same kind of map whether its source is a document render or an
@@ -449,55 +627,21 @@ function PageBitmap.buildFromBlitbuffer(bb, settings)
             return
         end
 
-        local background_r, background_g, background_b = estimateBackground(sample, src_w, src_h)
-        local background = luminance(background_r, background_g, background_b)
-        local data = ffi.new("uint8_t[?]", w * h)
-        local border = detect_borders and ffi.new("uint8_t[?]", w * h) or nil
-        local ink, border_cells = 0, 0
-
-        for y = 0, h - 1 do
-            local row = y * w
-            local src_y = y * step
-            for x = 0, w - 1 do
-                local r, g, b = sample(x * step, src_y)
-                local idx = row + x
-                if colourDistance(r, g, b, background_r, background_g, background_b) > ink_delta then
-                    data[idx] = 1
-                    ink = ink + 1
-                end
-                if border and luminance(r, g, b) <= border_luminance_max then
-                    border[idx] = 1
-                    border_cells = border_cells + 1
-                end
-            end
-        end
-
-        map = {
-            w = w,
-            h = h,
-            data = data,
-            border = border,
-            ink = ink,
-            native_w = src_w,
-            native_h = src_h,
-            scale_x = src_w / w,
-            scale_y = src_h / h,
-            background = background,
-            background_color = { r = background_r, g = background_g, b = background_b },
-            inverted = background < 128,
-        }
+        local border_cells, bg_r, bg_g, bg_b
+        map, border_cells, bg_r, bg_g, bg_b =
+            buildMapFromBuffer(work, sample, kind, raw_data, stride, is_rgb, src_w, src_h, settings, step, w, h)
         stop(
             string.format(
                 "%dx%d %s bg=%d,%d,%d%s ink=%d%%%s",
                 w,
                 h,
                 kind,
-                background_r,
-                background_g,
-                background_b,
+                bg_r,
+                bg_g,
+                bg_b,
                 map.inverted and " inverted" or "",
-                math.floor(ink * 100 / (w * h)),
-                border and string.format(" border=%d%%", math.floor(border_cells * 100 / (w * h))) or ""
+                math.floor(map.ink * 100 / (w * h)),
+                map.border and string.format(" border=%d%%", math.floor(border_cells * 100 / (w * h))) or ""
             )
         )
     end)

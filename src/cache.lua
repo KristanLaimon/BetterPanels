@@ -112,10 +112,14 @@ function Cache:preloadPanels(page)
         return
     end
 
-    -- A delayed prefetch may start a full Deep pass while the reader still
-    -- owns the current tile. It is optional work, so reserve the stricter
-    -- native-detection floor and leave a low-memory device responsive.
-    local minimum = self.settings.native_detect_min_free_bytes or Settings.defaults.native_detect_min_free_bytes
+    -- A delayed prefetch may start a full Deep pass if exact detection is
+    -- configured; otherwise the fast segmenter uses negligible memory (~1-2MB).
+    -- Reserve the stricter native floor only for exact detection so low-memory
+    -- devices (e.g. 300MB RAM) can still benefit from next-page prefetching.
+    local is_exact = self:getDetector() == "exact"
+    local minimum = is_exact
+            and (self.settings.native_detect_min_free_bytes or Settings.defaults.native_detect_min_free_bytes)
+        or (self.settings.prefetch_min_free_bytes or Settings.defaults.prefetch_min_free_bytes)
     if not Memory.hasHeadroom(minimum) then
         Timing.memory("panel prefetch skipped: low memory (need >=%dMB)", math.floor(minimum / (1024 * 1024)))
         return

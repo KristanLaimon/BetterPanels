@@ -44,4 +44,19 @@ describe("PageBitmap colour-aware background sampling", function()
     it("keeps greyscale threshold behaviour unchanged", function()
         assert.equals(42, PageBitmap._colourDistance(42, 42, 42, 0, 0, 0))
     end)
+
+    it("does not block documents without configurable table", function()
+        assert.is_nil(PageBitmap.getBlockReason({}))
+        assert.is_nil(PageBitmap.getBlockReason({ configurable = { text_wrap = 0 } }))
+        assert.equals("reflow mode", PageBitmap.getBlockReason({ configurable = { text_wrap = 1 } }))
+        local mock_kopt = {
+            is_optimizing_page = function()
+                return true
+            end,
+        }
+        assert.equals(
+            "page optimization enabled",
+            PageBitmap.getBlockReason({ configurable = { text_wrap = 0 }, koptinterface = mock_kopt })
+        )
+    end)
 end)

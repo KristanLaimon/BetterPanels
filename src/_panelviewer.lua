@@ -2453,15 +2453,16 @@ function PanelViewer:replaceButtonTable()
         buttons[2][3].enabled = true
     end
 
+    local width = (self.width or 600) - 2 * (self.button_padding or 0)
     self.button_table = ButtonTable:new({
-        width = self.width - 2 * self.button_padding,
+        width = width,
         buttons = buttons,
         zero_sep = true,
         show_parent = self,
     })
     self.button_container = CenterContainer:new({
         dimen = Geom:new({
-            w = self.width,
+            w = self.width or (self.button_table and self.button_table:getSize().w) or 600,
             h = self.button_table:getSize().h,
         }),
         self.button_table,

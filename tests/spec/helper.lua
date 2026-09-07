@@ -301,6 +301,16 @@ end)
 
 -- Trivial stub tables: required at file scope but only exercised by
 -- widget-construction methods no spec currently calls into.
+local WidgetStub = {}
+function WidgetStub:new(o)
+    o = o or {}
+    setmetatable(o, { __index = self })
+    return o
+end
+function WidgetStub:getSize()
+    return { w = 0, h = 0 }
+end
+
 for _, name in ipairs({
     "ui/widget/buttontable",
     "ui/widget/container/centercontainer",
@@ -308,6 +318,6 @@ for _, name in ipairs({
     "ui/widget/screenshoter",
 }) do
     preload(name, function()
-        return {}
+        return WidgetStub
     end)
 end

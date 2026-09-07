@@ -40,6 +40,7 @@ local Settings = {
         panel_cache_pages = 12,
         panel_prerender = true,
         panel_prerender_delay = 0.25,
+        prefetch_min_free_bytes = 15 * 1024 * 1024,
         prerender_min_free_bytes = 40 * 1024 * 1024,
         native_detect_min_free_bytes = 100 * 1024 * 1024,
         full_page_panel_ratio = 0.92,
