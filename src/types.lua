@@ -128,6 +128,7 @@
 --- @field panels PPPanel[] Adjacent page's ordered panel rectangles.
 --- @field start_idx integer 1-based panel index the crossing should land on.
 --- @field target_rect PPPanel Crop rectangle (post crop-mode expansion) for the landing panel.
+--- @field target_is_full_page boolean Whether the landing panel spans nearly the whole page.
 
 --- ImageViewer subclass for navigating one page's ordered panel sequence.
 ---

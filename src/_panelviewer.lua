@@ -1489,7 +1489,12 @@ function PanelViewer:animateSwitchToImageNum(target)
     Timing.memory("smooth_transition")
 
     local union = Geometry.rectUnion(rect_a, rect_b)
-    local target_zoom = canvasFitZoom(rect_b)
+    -- Margin mode does not alter `rect_b`; it renders the same pixels inside a
+    -- smaller viewport. Match that smaller destination scale here as well, or
+    -- ImageWidget clamps the camera to the full-size canvas and the animation
+    -- appears stationary before snapping to the margin-sized panel.
+    local target_margin_factor = self:getMarginShrinkFactorForPanel(target) or 1
+    local target_zoom = canvasFitZoom(rect_b) * target_margin_factor
 
     local bx, by
     if self.crop_mode == "none" and self.panels and self.panels[target] then
@@ -1585,12 +1590,14 @@ function PanelViewer:animateSwitchToImageNum(target)
     self.image = canvas_image
     self._center_x_ratio, self._center_y_ratio = ratio_ax, ratio_ay
     self.scale_factor = scale
+    self._panels_plus_transition_margin_factor = target_margin_factor
     self:update()
     if self.image_disposable then
         self:releasePreviousPanelImage(old_image)
     end
 
     self:runNavPanAnimation(ratio_bx, ratio_by, function()
+        self._panels_plus_transition_margin_factor = nil
         self:switchToImageNum(target)
     end)
 end
@@ -1713,6 +1720,7 @@ function PanelViewer:animateBoundaryTransition(direction)
     Timing.memory("smooth_boundary_transition")
 
     local target_zoom = canvasFitZoom(rect_b)
+    local target_margin_factor = self:getMarginShrinkFactorForPanel(nil, resolved.target_is_full_page) or 1
 
     local ok_a, tile_a, rotated_a = pcall(function()
         if self.crop_mode == "none" and self._images_list and self._images_list[self._images_list_cur] then
@@ -1846,13 +1854,18 @@ function PanelViewer:animateBoundaryTransition(direction)
     local old_image = self.image
     self.image = canvas_image
     self._center_x_ratio, self._center_y_ratio = ratio_ax, ratio_ay
-    self.scale_factor = 1 -- both slices already share target_zoom; no further scale needed
+    -- Both slices already share target_zoom. Scale the whole canvas once to
+    -- match the landing panel's margin framing; otherwise the camera shows a
+    -- full-size slice and snaps to its smaller margin-sized destination.
+    self.scale_factor = target_margin_factor
+    self._panels_plus_transition_margin_factor = target_margin_factor
     self:update()
     if self.image_disposable then
         self:releasePreviousPanelImage(old_image)
     end
 
     self:runNavPanAnimation(ratio_bx, ratio_by, function()
+        self._panels_plus_transition_margin_factor = nil
         if self.nav_boundary_commit_callback then
             self.nav_boundary_commit_callback(self, direction, resolved)
         end
@@ -1898,17 +1911,27 @@ function PanelViewer:isCurrentPanelFullPage()
     return flags[self._images_list_cur or 1] == true
 end
 
---- Return the width/height multiplier "margin" crop mode should render at.
+--- Return the width/height multiplier margin mode should use for one panel.
 ---
 --- Full-page panels are excluded: shrinking a splash page to fake a margin
 --- would waste most of the screen for an effect the reader didn't ask for.
+--- Keeping the panel index explicit is important to smooth navigation: while
+--- its synthetic canvas is onscreen, `_images_list_cur` is still the panel it
+--- started from, but the canvas must be scaled like the panel it will land on.
 ---
+--- @param image_num integer|nil 1-based panel index; defaults to the current panel.
+--- @param is_full_page boolean|nil Explicit full-page flag, used for a target
+--- panel from an adjacent page that is not in this viewer's panel list.
 --- @return number|nil factor Multiplier in (0, 1), or nil when no shrink applies.
-function PanelViewer:getMarginShrinkFactor()
+function PanelViewer:getMarginShrinkFactorForPanel(image_num, is_full_page)
     if self.crop_mode ~= "margin" then
         return nil
     end
-    if self:isCurrentPanelFullPage() then
+    if is_full_page == nil then
+        local flags = self.panel_is_full_page
+        is_full_page = flags and flags[image_num or self._images_list_cur or 1]
+    end
+    if is_full_page then
         return nil
     end
     local ratio = self.margin_ratio or 0.12
@@ -1916,6 +1939,20 @@ function PanelViewer:getMarginShrinkFactor()
         return nil
     end
     return 1 - math.min(0.9, ratio)
+end
+
+--- Return the margin factor for the widget currently being built.
+---
+--- A smooth transition temporarily displays a synthetic canvas but must use
+--- the destination panel's framing. The override exists only for that canvas;
+--- it is cleared immediately before the normal destination image is rebuilt.
+---
+--- @return number|nil factor Multiplier in (0, 1), or nil when no shrink applies.
+function PanelViewer:getMarginShrinkFactor()
+    if self._panels_plus_transition_margin_factor ~= nil then
+        return self._panels_plus_transition_margin_factor
+    end
+    return self:getMarginShrinkFactorForPanel(self._images_list_cur)
 end
 
 --- Shrink the box ImageViewer renders the panel into, for "margin" crop mode.

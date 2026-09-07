@@ -22,6 +22,7 @@ local spec_modules = {
     "tests.spec.panelviewer_leftedge_spec",
     "tests.spec.panelviewer_tapnav_spec",
     "tests.spec.panelviewer_transform_spec",
+    "tests.spec.panelviewer_margin_spec",
     "tests.spec.panelviewer_highlight_spec",
     "tests.spec.panelviewer_refineword_spec",
     "tests.spec.ocrdebug_spec",
