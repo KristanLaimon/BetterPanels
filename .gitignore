@@ -37,3 +37,13 @@ beastars.manga.PDF
 deadpool.comic.cbr
 kobayashi.manga.cbz
 page_diagnosis.md
+
+# Dataset book images: ignore all except 00, 01, and 02
+tests/dataset-mangas/dataset/*/*.png
+!tests/dataset-mangas/dataset/*/00.png
+!tests/dataset-mangas/dataset/*/01.png
+!tests/dataset-mangas/dataset/*/02.png
+
+# Python bytecode
+__pycache__/
+*.pyc

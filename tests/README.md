@@ -79,37 +79,46 @@ The benchmark calculates standard computer vision evaluation metrics:
 
 ---
 
-## Adding Custom Test Pages
+---
 
-To add your own manga or comic pages for testing:
-1. Place the image (JPG or PNG) under `tests/dataset-mangas/dataset/images/custom_book/ja/001.jpg` (or in a new subfolder).
-2. Add the page entry and ground truth frames to `tests/dataset-mangas/dataset/annotation.json`:
-   ```json
-   {
-     "book_title": "custom_book",
-     "pages": [
-       {
-         "page_index": 1,
-         "image_paths": {
-           "ja": "images/custom_book/ja/001.jpg"
-         },
-         "frame": [
-           { "x": 50, "y": 60, "w": 400, "h": 300 },
-           { "x": 480, "y": 60, "w": 400, "h": 300 }
-         ]
-       }
-     ]
-   }
-   ```
-3. Run the benchmark tool on your custom page:
-   ```bash
-   lua tools/benchmark_panels.lua --book custom_book --page 1
-   ```
+## Manga Panel Annotator & Private Dataset
+
+A PyQt6 desktop annotator application is provided to build custom ground-truth manga/comic datasets by hand:
+
+```bash
+# Launch annotator app
+python3 tests/dataset-mangas/annotator.py
+
+# Or launch directly with a comic file
+python3 tests/dataset-mangas/annotator.py path/to/manga.cbz
+```
+
+### Supported Formats
+- Comic archives: `.cbz`, `.cbr` (via `unrar` / `bsdtar`)
+- Documents: `.pdf`, `.epub`, `.kepub.epub`, `.mobi` (via `PyMuPDF`)
+- Image collections: folders of `.jpg`, `.jpeg`, `.png`, `.webp`
+
+### Key Annotator Controls & Shortcuts
+- **Click & Drag**: Draw panel bounding rectangles in sequential reading order. Each new box receives the next badge number (`[1]`, `[2]`, `[3]`...).
+- **Full Page Panel (`F`)**: Instantly creates a panel bounding box covering the entire page (useful for splash pages and full-page spreads).
+- **Resize & Move**: Click any rectangle to reveal 8 resize handles for fine adjustment, or drag inside the box to reposition.
+- **Panel Reordering**: Use **Move Up** / **Move Down** buttons in the sidebar to reorder panels without redrawing.
+- **Delete Panel (`Del` / `Backspace`)**: Remove the currently selected panel.
+- **Save Dataset (`Ctrl+S`)**: Exports rendered/extracted page images to `images/<book_title>/` and updates `annotation.json` compatible with PanelsPlus.
+- **Page Navigation**: `A` / `Left Arrow` for Previous Page, `D` / `Right Arrow` for Next Page, plus page slider and spinbox.
+
+### Running Benchmarks Against Private Datasets
+Once pages are annotated and saved:
+```bash
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private
+# Or evaluate a specific book/page:
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private --book my_manga --page 1
+```
 
 ---
 
 ## Licensing & Compliance
 
 - **PanelsPlus Codebase**: MIT License (permits commercial redistribution).
-- **`tests/dataset-mangas/dataset`**: Licensed under **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** from the OpenMantra project (Ryota Hinami et al., AAAI 2021).
+- **Dataset Privacy**: Your hand-crafted annotations and images stay strictly local under `tests/dataset-mangas/dataset-private/`.
 - **Packaging Boundary**: The `build.sh` script packages only `src/`, `locales/`, and plugin metadata into `dist/`. The `tests/` directory is never bundled into plugin release zip files.

@@ -80,6 +80,13 @@ else
     pages = Manifest.getGoldenPages(dataset_dir)
 end
 
+if #pages == 0 then
+    print(string.format("No pages found in dataset directory '%s'.", dataset_dir))
+    print("Run the annotator app (python3 tests/dataset-mangas/annotator.py) to build your dataset,")
+    print("or specify --dataset <path> pointing to your annotated dataset folder.")
+    os.exit(0)
+end
+
 print(string.format("Evaluating %d page(s) (IoU threshold: %.2f)...", #pages, iou_threshold))
 print(string.rep("-", 80))
 

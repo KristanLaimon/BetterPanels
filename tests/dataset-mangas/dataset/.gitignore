@@ -1,0 +1,7 @@
+# Ignore all dataset images except 00.png, 01.png, and 02.png
+*/*
+!*/*.json
+!*/*.md
+!*/00.png
+!*/01.png
+!*/02.png

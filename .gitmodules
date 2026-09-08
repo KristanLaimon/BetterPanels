@@ -1,3 +1,0 @@
-[submodule "tests/dataset-mangas/dataset"]
-	path = tests/dataset-mangas/dataset
-	url = https://github.com/KristanLaimon/open-mangas-dataset.git

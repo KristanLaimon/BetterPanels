@@ -1,0 +1,771 @@
+"""
+Main PyQt6 Application for Manga Comic Reader & Panel Annotator.
+Features:
+- KOReader-like Library / Recent Projects tab with book covers, progress %, and finished toggle.
+- Extraction of .cbz, .cbr, .pdf, .mobi, .epub into dataset/<bookfriendlyname>/00.png, 01.png...
+- Canvas panel annotator with sequential badges, full-page shortcut (F), 8-handle resizing.
+- Finished book shortcut (Ctrl+M), auto-saving, and PanelsPlus schema compatibility.
+"""
+
+import os
+import re
+import sys
+from typing import Optional, List
+from PIL import Image
+
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtGui import (
+    QAction, QIcon, QImage, QPixmap, QKeySequence, QFont, QColor
+)
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QLineEdit, QFileDialog, QMessageBox,
+    QListWidget, QListWidgetItem, QSpinBox, QSlider, QStatusBar,
+    QSplitter, QGroupBox, QTabWidget, QScrollArea, QFrame,
+    QProgressBar, QProgressDialog, QInputDialog
+)
+
+from .document_reader import DocumentReader
+from .dataset_manager import DatasetManager, Panel
+from .canvas import MangaCanvas
+
+
+def pil_to_qpixmap(pil_img: Image.Image) -> QPixmap:
+    """Convert a PIL Image to QPixmap efficiently."""
+    if pil_img.mode != "RGBA":
+        pil_img = pil_img.convert("RGBA")
+    data = pil_img.tobytes("raw", "RGBA")
+    qimg = QImage(data, pil_img.width, pil_img.height, QImage.Format.Format_RGBA8888)
+    return QPixmap.fromImage(qimg)
+
+
+class BookCardWidget(QFrame):
+    """Card widget representing a book in the KOReader-style Recent Projects view."""
+
+    open_requested = pyqtSignal(str)  # book_title
+    toggle_finished_requested = pyqtSignal(str)  # book_title
+
+    def __init__(self, book_info: dict, parent=None):
+        super().__init__(parent)
+        self.book_title = book_info["book_title"]
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet("""
+            BookCardWidget {
+                background-color: #252526;
+                border: 1px solid #3e3e42;
+                border-radius: 8px;
+                padding: 10px;
+            }
+            BookCardWidget:hover {
+                border: 1px solid #007acc;
+                background-color: #2d2d30;
+            }
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(16)
+
+        # 1. Cover image thumbnail
+        self.lbl_cover = QLabel()
+        self.lbl_cover.setFixedSize(90, 130)
+        self.lbl_cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_cover.setStyleSheet("""
+            background-color: #1a1a1a;
+            border: 1px solid #444444;
+            border-radius: 4px;
+        """)
+
+        cover_path = book_info.get("cover_path")
+        if cover_path and os.path.exists(cover_path):
+            try:
+                pix = QPixmap(cover_path)
+                if not pix.isNull():
+                    scaled = pix.scaled(
+                        90, 130,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    self.lbl_cover.setPixmap(scaled)
+                else:
+                    self.lbl_cover.setText("📖\nCover")
+            except Exception:
+                self.lbl_cover.setText("📖\nCover")
+        else:
+            self.lbl_cover.setText("📖\nCover")
+
+        layout.addWidget(self.lbl_cover)
+
+        # 2. Book details & progress info
+        details_layout = QVBoxLayout()
+        details_layout.setSpacing(6)
+
+        # Title + status badge
+        title_row = QHBoxLayout()
+        lbl_title = QLabel(self.book_title)
+        font = QFont()
+        font.setPointSize(12)
+        font.setBold(True)
+        lbl_title.setFont(font)
+        lbl_title.setStyleSheet("color: #ffffff;")
+        title_row.addWidget(lbl_title)
+
+        is_finished = book_info.get("finished", False)
+        lbl_badge = QLabel(" FINISHED " if is_finished else " IN PROGRESS ")
+        badge_style = """
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 4px;
+        """
+        if is_finished:
+            badge_style += "background-color: #2e7d32; color: #ffffff;"
+        else:
+            badge_style += "background-color: #e65100; color: #ffffff;"
+        lbl_badge.setStyleSheet(badge_style)
+        title_row.addWidget(lbl_badge)
+        title_row.addStretch(1)
+        details_layout.addLayout(title_row)
+
+        # Progress bar
+        pct = book_info.get("progress_percent", 0)
+        pbar = QProgressBar()
+        pbar.setRange(0, 100)
+        pbar.setValue(pct)
+        pbar.setFixedHeight(12)
+        pbar.setTextVisible(False)
+        pbar_color = "#4caf50" if is_finished else "#2196f3"
+        pbar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: #333333;
+                border-radius: 6px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {pbar_color};
+                border-radius: 6px;
+            }}
+        """)
+        details_layout.addWidget(pbar)
+
+        # Progress metrics label
+        ann_cnt = book_info.get("annotated_pages", 0)
+        tot_cnt = book_info.get("total_pages", 0)
+        lbl_info = QLabel(f"Progress: <b>{pct}%</b> ({ann_cnt} of {tot_cnt} pages annotated)")
+        lbl_info.setStyleSheet("color: #cccccc; font-size: 11px;")
+        details_layout.addWidget(lbl_info)
+
+        # Source file or date
+        last_opened = book_info.get("last_opened", "")
+        if last_opened:
+            date_str = last_opened[:10] + " " + last_opened[11:16]
+            lbl_date = QLabel(f"Last accessed: {date_str}")
+            lbl_date.setStyleSheet("color: #888888; font-size: 10px;")
+            details_layout.addWidget(lbl_date)
+
+        details_layout.addStretch(1)
+        layout.addLayout(details_layout, 1)
+
+        # 3. Action buttons
+        btn_layout = QVBoxLayout()
+        btn_layout.setSpacing(8)
+
+        btn_open = QPushButton("▶ Continue")
+        btn_open.setStyleSheet("""
+            font-weight: bold;
+            padding: 6px 14px;
+            background-color: #007acc;
+            color: white;
+            border-radius: 4px;
+        """)
+        btn_open.clicked.connect(lambda: self.open_requested.emit(self.book_title))
+        btn_layout.addWidget(btn_open)
+
+        btn_toggle = QPushButton("↩ In Progress" if is_finished else "✓ Mark Finished")
+        btn_toggle.setStyleSheet("""
+            padding: 4px 10px;
+            background-color: #3e3e42;
+            color: #d4d4d4;
+            border-radius: 4px;
+        """)
+        btn_toggle.clicked.connect(lambda: self.toggle_finished_requested.emit(self.book_title))
+        btn_layout.addWidget(btn_toggle)
+
+        btn_layout.addStretch(1)
+        layout.addLayout(btn_layout)
+
+    def mouseDoubleClickEvent(self, event):
+        self.open_requested.emit(self.book_title)
+
+
+class AnnotatorMainWindow(QMainWindow):
+    """Main application window with Library / Recent tab and Annotator tab."""
+
+    def __init__(self, initial_file: Optional[str] = None, dataset_dir: Optional[str] = None):
+        super().__init__()
+        self.setWindowTitle("PanelsPlus Manga Annotator")
+        self.resize(1300, 860)
+
+        # Default dataset directory: tests/dataset-mangas/dataset
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        default_ds_dir = os.path.join(repo_root, "tests", "dataset-mangas", "dataset")
+        os.makedirs(default_ds_dir, exist_ok=True)
+
+        self.dataset_dir = os.path.abspath(dataset_dir) if dataset_dir else default_ds_dir
+        self.dataset_mgr = DatasetManager(self.dataset_dir)
+
+        self.reader: Optional[DocumentReader] = None
+        self.current_page_num = 1
+        self.book_title = ""
+
+        self._init_ui()
+
+        # Refresh recent library
+        self.refresh_library()
+
+        if initial_file and os.path.exists(initial_file):
+            self.import_or_open_file(initial_file)
+
+    def _init_ui(self):
+        self.tabs = QTabWidget(self)
+        self.setCentralWidget(self.tabs)
+
+        # Tab 0: 📚 Library & Recent Projects
+        self.tab_library = QWidget()
+        self._init_library_tab(self.tab_library)
+        self.tabs.addTab(self.tab_library, "📚 Recent Projects")
+
+        # Tab 1: ✏️ Panel Annotator
+        self.tab_annotator = QWidget()
+        self._init_annotator_tab(self.tab_annotator)
+        self.tabs.addTab(self.tab_annotator, "✏️ Panel Annotator")
+
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
+        # Menus
+        self._init_menus()
+
+        # Status Bar
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.lbl_status_coords = QLabel("X: 0, Y: 0")
+        self.lbl_status_zoom = QLabel("Zoom: 100%")
+        self.status_bar.addPermanentWidget(self.lbl_status_coords)
+        self.status_bar.addPermanentWidget(self.lbl_status_zoom)
+        self.status_bar.showMessage("Ready. Select a recent book or import a new comic.")
+
+    def _init_library_tab(self, parent: QWidget):
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Top Bar: Actions and search
+        top_bar = QHBoxLayout()
+        self.btn_import = QPushButton("+ Search System for Comic File...")
+        self.btn_import.setStyleSheet("""
+            font-size: 13px;
+            font-weight: bold;
+            padding: 8px 18px;
+            background-color: #2e7d32;
+            color: white;
+            border-radius: 4px;
+        """)
+        self.btn_import.clicked.connect(self._search_system_dialog)
+        top_bar.addWidget(self.btn_import)
+
+        top_bar.addSpacing(20)
+        self.txt_search = QLineEdit()
+        self.txt_search.setPlaceholderText("Filter recent books...")
+        self.txt_search.textChanged.connect(self.refresh_library)
+        top_bar.addWidget(self.txt_search, 1)
+
+        self.lbl_book_count = QLabel("0 books")
+        self.lbl_book_count.setStyleSheet("color: #888888; font-weight: bold;")
+        top_bar.addWidget(self.lbl_book_count)
+
+        layout.addLayout(top_bar)
+
+        # Scroll area for book cards
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background-color: #1e1e1e; border: none;")
+
+        self.cards_container = QWidget()
+        self.cards_layout = QVBoxLayout(self.cards_container)
+        self.cards_layout.setContentsMargins(4, 4, 4, 4)
+        self.cards_layout.setSpacing(10)
+        self.cards_layout.addStretch(1)
+
+        scroll.setWidget(self.cards_container)
+        layout.addWidget(scroll, 1)
+
+    def _init_annotator_tab(self, parent: QWidget):
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        # Top Control & Navigation Bar
+        top_nav = QHBoxLayout()
+        btn_back = QPushButton("← Library")
+        btn_back.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
+        top_nav.addWidget(btn_back)
+
+        self.lbl_current_book = QLabel("No book loaded")
+        self.lbl_current_book.setStyleSheet("font-size: 13px; font-weight: bold; color: #ffffff;")
+        top_nav.addWidget(self.lbl_current_book)
+
+        top_nav.addStretch(1)
+
+        self.btn_mark_finished = QPushButton("✓ Mark Finished (Ctrl+M)")
+        self.btn_mark_finished.setShortcut(QKeySequence("Ctrl+M"))
+        self.btn_mark_finished.clicked.connect(self.toggle_current_book_finished)
+        top_nav.addWidget(self.btn_mark_finished)
+
+        self.btn_save_top = QPushButton("💾 Save Dataset (Ctrl+S)")
+        self.btn_save_top.setStyleSheet("font-weight: bold; background-color: #1976d2; color: white;")
+        self.btn_save_top.clicked.connect(self.save_dataset)
+        top_nav.addWidget(self.btn_save_top)
+
+        layout.addLayout(top_nav)
+
+        # Main splitter: Canvas + Panels Sidebar
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        canvas_container = QWidget()
+        canvas_layout = QVBoxLayout(canvas_container)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.canvas = MangaCanvas()
+        self.canvas.panels_changed.connect(self._on_panels_changed)
+        self.canvas.panel_selected.connect(self._on_canvas_panel_selected)
+        self.canvas.cursor_position.connect(self._on_cursor_position)
+        canvas_layout.addWidget(self.canvas, 1)
+
+        # Bottom Page Navigation
+        page_nav = QHBoxLayout()
+        self.btn_prev = QPushButton("◀ Prev (A)")
+        self.btn_prev.setShortcut(QKeySequence(Qt.Key.Key_A))
+        self.btn_prev.clicked.connect(self.prev_page)
+        page_nav.addWidget(self.btn_prev)
+
+        self.spin_page = QSpinBox()
+        self.spin_page.setMinimum(1)
+        self.spin_page.setMaximum(1)
+        self.spin_page.valueChanged.connect(self.go_to_page)
+        page_nav.addWidget(self.spin_page)
+
+        self.lbl_total_pages = QLabel("/ 1")
+        page_nav.addWidget(self.lbl_total_pages)
+
+        self.slider_page = QSlider(Qt.Orientation.Horizontal)
+        self.slider_page.setMinimum(1)
+        self.slider_page.setMaximum(1)
+        self.slider_page.valueChanged.connect(self.go_to_page)
+        page_nav.addWidget(self.slider_page, 1)
+
+        self.btn_next = QPushButton("Next (D) ▶")
+        self.btn_next.setShortcut(QKeySequence(Qt.Key.Key_D))
+        self.btn_next.clicked.connect(self.next_page)
+        page_nav.addWidget(self.btn_next)
+
+        canvas_layout.addLayout(page_nav)
+        splitter.addWidget(canvas_container)
+
+        # Sidebar
+        sidebar = QWidget()
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar.setMinimumWidth(260)
+        sidebar.setMaximumWidth(360)
+
+        panel_group = QGroupBox("Panel Sequence")
+        p_layout = QVBoxLayout(panel_group)
+
+        self.btn_full_page = QPushButton("Add Full Page Panel (F)")
+        self.btn_full_page.setStyleSheet("font-weight: bold; background-color: #2e7d32; color: white;")
+        self.btn_full_page.clicked.connect(self.canvas.add_full_page_panel)
+        p_layout.addWidget(self.btn_full_page)
+
+        self.panel_list = QListWidget()
+        self.panel_list.currentRowChanged.connect(self._on_list_row_selected)
+        p_layout.addWidget(self.panel_list, 1)
+
+        reorder_layout = QHBoxLayout()
+        self.btn_move_up = QPushButton("▲ Move Up")
+        self.btn_move_up.clicked.connect(self._move_panel_up)
+        reorder_layout.addWidget(self.btn_move_up)
+
+        self.btn_move_down = QPushButton("▼ Move Down")
+        self.btn_move_down.clicked.connect(self._move_panel_down)
+        reorder_layout.addWidget(self.btn_move_down)
+        p_layout.addLayout(reorder_layout)
+
+        action_layout = QHBoxLayout()
+        self.btn_del = QPushButton("Delete (Del)")
+        self.btn_del.clicked.connect(self.canvas.delete_selected_panel)
+        action_layout.addWidget(self.btn_del)
+
+        self.btn_clear = QPushButton("Clear Page")
+        self.btn_clear.clicked.connect(self.canvas.clear_panels)
+        action_layout.addWidget(self.btn_clear)
+        p_layout.addLayout(action_layout)
+
+        sidebar_layout.addWidget(panel_group, 1)
+
+        splitter.addWidget(sidebar)
+        splitter.setStretchFactor(0, 4)
+        splitter.setStretchFactor(1, 1)
+        layout.addWidget(splitter, 1)
+
+    def _init_menus(self):
+        menubar = self.menuBar()
+
+        file_menu = menubar.addMenu("&File")
+        act_open = QAction("&Search System for Comic...", self)
+        act_open.setShortcut(QKeySequence.StandardKey.Open)
+        act_open.triggered.connect(self._search_system_dialog)
+        file_menu.addAction(act_open)
+
+        act_save = QAction("&Save Dataset", self)
+        act_save.setShortcut(QKeySequence.StandardKey.Save)
+        act_save.triggered.connect(self.save_dataset)
+        file_menu.addAction(act_save)
+
+        file_menu.addSeparator()
+        act_exit = QAction("E&xit", self)
+        act_exit.setShortcut(QKeySequence.StandardKey.Quit)
+        act_exit.triggered.connect(self.close)
+        file_menu.addAction(act_exit)
+
+        edit_menu = menubar.addMenu("&Edit")
+        act_full = QAction("Add &Full Page Panel", self)
+        act_full.setShortcut(QKeySequence(Qt.Key.Key_F))
+        act_full.triggered.connect(self.canvas.add_full_page_panel)
+        edit_menu.addAction(act_full)
+
+        act_fin = QAction("Toggle &Finished", self)
+        act_fin.setShortcut(QKeySequence("Ctrl+M"))
+        act_fin.triggered.connect(self.toggle_current_book_finished)
+        edit_menu.addAction(act_fin)
+
+        act_del = QAction("&Delete Selected Panel", self)
+        act_del.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+        act_del.triggered.connect(self.canvas.delete_selected_panel)
+        edit_menu.addAction(act_del)
+
+        act_clear = QAction("&Clear All Panels on Page", self)
+        act_clear.triggered.connect(self.canvas.clear_panels)
+        edit_menu.addAction(act_clear)
+
+        view_menu = menubar.addMenu("&View")
+        act_fit_win = QAction("Fit &Window", self)
+        act_fit_win.triggered.connect(lambda: self.canvas.fit_to_window(self.canvas.rect()))
+        view_menu.addAction(act_fit_win)
+
+        act_fit_w = QAction("Fit &Width", self)
+        act_fit_w.triggered.connect(lambda: self.canvas.fit_to_width(self.canvas.rect()))
+        view_menu.addAction(act_fit_w)
+
+        act_zoom_100 = QAction("Zoom &100%", self)
+        act_zoom_100.triggered.connect(lambda: self.canvas.set_zoom(1.0))
+        view_menu.addAction(act_zoom_100)
+
+        act_zoom_in = QAction("Zoom &In", self)
+        act_zoom_in.setShortcut(QKeySequence.StandardKey.ZoomIn)
+        act_zoom_in.triggered.connect(lambda: self.canvas.set_zoom(self.canvas.zoom_factor * 1.2))
+        view_menu.addAction(act_zoom_in)
+
+        act_zoom_out = QAction("Zoom &Out", self)
+        act_zoom_out.setShortcut(QKeySequence.StandardKey.ZoomOut)
+        act_zoom_out.triggered.connect(lambda: self.canvas.set_zoom(self.canvas.zoom_factor / 1.2))
+        view_menu.addAction(act_zoom_out)
+
+    def refresh_library(self):
+        """Re-scan dataset folder and update book cards in Library tab."""
+        # Clear existing cards
+        while self.cards_layout.count() > 1:
+            item = self.cards_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        books = self.dataset_mgr.get_recent_books()
+        filter_text = self.txt_search.text().lower().strip() if hasattr(self, 'txt_search') else ""
+
+        matched_count = 0
+        for b in books:
+            if filter_text and filter_text not in b["book_title"].lower():
+                continue
+
+            card = BookCardWidget(b)
+            card.open_requested.connect(self.open_book_by_title)
+            card.toggle_finished_requested.connect(self._on_toggle_finished_card)
+            self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
+            matched_count += 1
+
+        self.lbl_book_count.setText(f"{matched_count} book(s)")
+
+    def _on_toggle_finished_card(self, book_title: str):
+        meta = self.dataset_mgr.load_book_metadata(book_title)
+        new_state = not meta.get("finished", False)
+        self.dataset_mgr.mark_book_finished(book_title, new_state)
+        self.refresh_library()
+
+    def toggle_current_book_finished(self):
+        if not self.book_title:
+            return
+        meta = self.dataset_mgr.load_book_metadata(self.book_title)
+        new_state = not meta.get("finished", False)
+        self.dataset_mgr.mark_book_finished(self.book_title, new_state)
+        label_txt = "✓ Mark Finished (Ctrl+M)" if not new_state else "↩ Mark In Progress (Ctrl+M)"
+        self.btn_mark_finished.setText(label_txt)
+        status = "Finished" if new_state else "In Progress"
+        self.status_bar.showMessage(f"Book '{self.book_title}' marked as {status}.", 3000)
+        self.refresh_library()
+
+    def open_book_by_title(self, book_title: str):
+        """Open an existing book directory from dataset/<book_title>/."""
+        book_dir = self.dataset_mgr.get_book_dir(book_title)
+        if not os.path.exists(book_dir):
+            QMessageBox.warning(self, "Book Not Found", f"Directory does not exist: {book_dir}")
+            return
+
+        self._commit_current_page_panels()
+        if self.reader:
+            self.reader.close()
+
+        self.reader = DocumentReader(book_dir)
+        self.book_title = book_title
+        self.lbl_current_book.setText(f"📖 {self.book_title}")
+
+        meta = self.dataset_mgr.load_book_metadata(book_title)
+        cur_p = meta.get("current_page", 1)
+        cur_p = max(1, min(cur_p, max(1, self.reader.total_pages)))
+        self.current_page_num = cur_p
+
+        total = max(1, self.reader.total_pages)
+        self.spin_page.setMaximum(total)
+        self.slider_page.setMaximum(total)
+        self.lbl_total_pages.setText(f"/ {total}")
+
+        is_fin = meta.get("finished", False)
+        self.btn_mark_finished.setText("↩ Mark In Progress (Ctrl+M)" if is_fin else "✓ Mark Finished (Ctrl+M)")
+
+        self._render_current_page(fit=True)
+        self.dataset_mgr.update_last_opened(self.book_title, self.current_page_num)
+
+        # Switch to Annotator tab
+        self.tabs.setCurrentIndex(1)
+        self.status_bar.showMessage(f"Opened book '{self.book_title}'.", 3000)
+
+    def _search_system_dialog(self):
+        """File search dialog allowing user to choose comic or document from disk."""
+        filt = "Comic & Document Archives (*.cbz *.cbr *.pdf *.epub *.kepub.epub *.mobi *.jpg *.png);;All Files (*)"
+        fpath, _ = QFileDialog.getOpenFileName(self, "Select Comic / Document to Import", "", filt)
+        if fpath:
+            self.import_or_open_file(fpath)
+
+    def import_or_open_file(self, file_path: str, friendly_name: Optional[str] = None):
+        """Extract file into dataset/<bookfriendlyname>/00.png, 01.png... and open it."""
+        try:
+            # 1. Ask or derive friendly book name if not provided
+            stem = os.path.splitext(os.path.basename(file_path))[0]
+            clean_name = re.sub(r'[\s_]+', '_', stem.strip())
+
+            if not friendly_name:
+                user_name, ok = QInputDialog.getText(
+                    self, "Book Folder Name",
+                    "Enter folder name for this dataset:",
+                    QLineEdit.EchoMode.Normal,
+                    clean_name
+                )
+                if not ok or not user_name.strip():
+                    return
+                friendly_name = user_name
+
+            friendly_name = re.sub(r'[\s_]+', '_', friendly_name.strip())
+            target_dir = self.dataset_mgr.get_book_dir(friendly_name)
+
+            # 2. Extract pages into target directory
+            temp_reader = DocumentReader(file_path)
+            total = temp_reader.total_pages
+
+            if total == 0:
+                temp_reader.close()
+                QMessageBox.warning(self, "Empty Book", "Could not find any pages in this file.")
+                return
+
+            prog = QProgressDialog(f"Extracting {total} pages into {friendly_name}...", "Cancel", 0, total, self)
+            prog.setWindowModality(Qt.WindowModality.WindowModal)
+            prog.setMinimumDuration(0)
+            prog.setValue(0)
+
+            cancelled = False
+
+            def update_progress(curr, tot):
+                nonlocal cancelled
+                if prog.wasCanceled():
+                    cancelled = True
+                    return False
+                prog.setValue(curr)
+                QApplication.processEvents()
+                if prog.wasCanceled():
+                    cancelled = True
+                    return False
+                return True
+
+            extracted = temp_reader.extract_all_pages(target_dir, progress_callback=update_progress)
+            temp_reader.close()
+            prog.close()
+
+            if cancelled or len(extracted) < total:
+                # Cancelled by user - clean up partial files
+                if os.path.exists(target_dir):
+                    import shutil
+                    shutil.rmtree(target_dir, ignore_errors=True)
+                self.status_bar.showMessage("Extraction cancelled.", 4000)
+                return
+
+            # 3. Save initial metadata
+            meta = {
+                "book_title": friendly_name,
+                "total_pages": total,
+                "finished": False,
+                "current_page": 1,
+                "last_opened": "",
+                "source_file": file_path,
+            }
+            self.dataset_mgr.save_book_metadata(friendly_name, meta)
+
+            # 4. Open extracted book in annotator
+            self.refresh_library()
+            self.open_book_by_title(friendly_name)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error Importing File", f"Could not import file:\n{str(e)}")
+
+    def _render_current_page(self, fit: bool = False):
+        if not self.reader or self.reader.total_pages == 0:
+            return
+
+        page = self.reader.get_page(self.current_page_num)
+        if not page:
+            return
+
+        pil_img = page.get_pil_image()
+        pixmap = pil_to_qpixmap(pil_img)
+
+        pa = self.dataset_mgr.get_page_annotation(self.book_title, self.current_page_num)
+        panels = [p.copy() for p in pa.frames]
+
+        self.canvas.set_page(pixmap, panels)
+        if fit:
+            self.canvas.fit_to_window(self.canvas.rect())
+
+        self.spin_page.blockSignals(True)
+        self.slider_page.blockSignals(True)
+        self.spin_page.setValue(self.current_page_num)
+        self.slider_page.setValue(self.current_page_num)
+        self.spin_page.blockSignals(False)
+        self.slider_page.blockSignals(False)
+
+        self._refresh_panel_list()
+        self.lbl_status_zoom.setText(f"Zoom: {int(self.canvas.zoom_factor * 100)}%")
+
+    def _commit_current_page_panels(self):
+        if self.book_title and self.reader:
+            self.dataset_mgr.set_page_frames(self.book_title, self.current_page_num, self.canvas.panels)
+            self.dataset_mgr.update_last_opened(self.book_title, self.current_page_num)
+
+    def prev_page(self):
+        if self.current_page_num > 1:
+            self._commit_current_page_panels()
+            self.current_page_num -= 1
+            self._render_current_page()
+
+    def next_page(self):
+        if self.reader and self.current_page_num < self.reader.total_pages:
+            self._commit_current_page_panels()
+            self.current_page_num += 1
+            self._render_current_page()
+
+    def go_to_page(self, page_num: int):
+        if self.reader and 1 <= page_num <= self.reader.total_pages and page_num != self.current_page_num:
+            self._commit_current_page_panels()
+            self.current_page_num = page_num
+            self._render_current_page()
+
+    def save_dataset(self, show_dialog: bool = True):
+        self._commit_current_page_panels()
+        if not self.book_title:
+            if show_dialog:
+                QMessageBox.information(self, "Save Dataset", "No book currently loaded.")
+            return
+
+        json_path = self.dataset_mgr.save_book_dataset(self.book_title)
+        msg = f"Saved annotations for '{self.book_title}' to:\n{json_path}"
+        self.status_bar.showMessage(msg, 5000)
+        if show_dialog:
+            QMessageBox.information(self, "Dataset Saved", msg)
+        self.refresh_library()
+
+    def _on_tab_changed(self, idx: int):
+        if idx == 0:
+            self._commit_current_page_panels()
+            self.refresh_library()
+
+    def _on_panels_changed(self):
+        self._commit_current_page_panels()
+        self._refresh_panel_list()
+
+    def _refresh_panel_list(self):
+        self.panel_list.blockSignals(True)
+        self.panel_list.clear()
+        for idx, p in enumerate(self.canvas.panels):
+            item = QListWidgetItem(f"[{idx + 1}] x={p.x}, y={p.y} ({p.w}x{p.h})")
+            self.panel_list.addItem(item)
+        if 0 <= self.canvas.selected_panel_index < self.panel_list.count():
+            self.panel_list.setCurrentRow(self.canvas.selected_panel_index)
+        self.panel_list.blockSignals(False)
+
+    def _on_canvas_panel_selected(self, idx: int):
+        self.panel_list.blockSignals(True)
+        if 0 <= idx < self.panel_list.count():
+            self.panel_list.setCurrentRow(idx)
+        else:
+            self.panel_list.clearSelection()
+        self.panel_list.blockSignals(False)
+
+    def _on_list_row_selected(self, row: int):
+        self.canvas.select_panel(row)
+
+    def _move_panel_up(self):
+        idx = self.panel_list.currentRow()
+        if idx > 0:
+            self.canvas.move_panel_up(idx)
+
+    def _move_panel_down(self):
+        idx = self.panel_list.currentRow()
+        if idx >= 0:
+            self.canvas.move_panel_down(idx)
+
+    def _on_cursor_position(self, ix: int, iy: int):
+        self.lbl_status_coords.setText(f"X: {ix}, Y: {iy}")
+        self.lbl_status_zoom.setText(f"Zoom: {int(self.canvas.zoom_factor * 100)}%")
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="PanelsPlus Manga Panel Annotator")
+    parser.add_argument("file", nargs="?", help="Optional path to comic file (.cbz, .cbr, .pdf, .epub, .mobi, etc.)")
+    parser.add_argument("--dataset-dir", default=None, help="Target dataset directory (defaults to tests/dataset-mangas/dataset)")
+    args = parser.parse_args()
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("PanelsPlus Annotator")
+
+    window = AnnotatorMainWindow(initial_file=args.file, dataset_dir=args.dataset_dir)
+    window.show()
+
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
