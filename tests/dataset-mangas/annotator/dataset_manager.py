@@ -271,7 +271,11 @@ class DatasetManager:
         for p_idx in sorted(pages_dict.keys()):
             pa = pages_dict[p_idx]
             if pa.frames or pa.image_rel_path:
-                pages_list.append(pa.to_dict())
+                d = pa.to_dict()
+                if "image_paths" in d and "ja" in d["image_paths"]:
+                    fname = os.path.basename(d["image_paths"]["ja"])
+                    d["image_paths"]["ja"] = f"{book_title}/{fname}"
+                pages_list.append(d)
 
         book_json = [{
             "book_title": book_title,
@@ -294,7 +298,11 @@ class DatasetManager:
             for p_idx in sorted(pages_dict.keys()):
                 pa = pages_dict[p_idx]
                 if pa.frames or pa.image_rel_path:
-                    pages_list.append(pa.to_dict())
+                    d = pa.to_dict()
+                    if "image_paths" in d and "ja" in d["image_paths"]:
+                        fname = os.path.basename(d["image_paths"]["ja"])
+                        d["image_paths"]["ja"] = f"{book_title}/{fname}"
+                    pages_list.append(d)
 
             if pages_list:
                 dataset_array.append({

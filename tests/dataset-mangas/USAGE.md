@@ -112,7 +112,11 @@ When launched, the application presents the **📚 Recent Projects** tab:
 
 ### 5. Adjust, Fine-Tune & Reorder Panels
 - **Undo / Redo**: Press **`Ctrl+Z`** to undo any panel placement, resize, or deletion. Press **`Ctrl+Y`** (or `Ctrl+Shift+Z`) to redo.
-- **🎯 Precision Mouse Fine-Tuning**: When working on tight margins or corner pixels, check **🎯 Precision Fine-Tuning** (or press **`P`**). Slow, deliberate mouse movements will automatically be dampened (up to 4× slower) so you can hit corners with single-pixel accuracy without changing your operating system DPI. You can also hold **`Shift`** at any time during drawing or resizing to temporarily engage precision damping.
+- **🎯 Precision Fine-Tuning & 4× Loupe**: When working on tight margins or corner pixels, check **🎯 Precision Fine-Tuning** (or press **`P`**).
+  - **100% Cursor Alignment**: The rectangle and handles track the cursor directly with zero divergence or lag.
+  - **🎯 4× Precision Loupe HUD**: While drawing or dragging handles, a floating 4× magnified HUD displays in the canvas corner with a central crosshair and native coordinates, letting you view individual manga border pixels clearly.
+  - **Magnetic Edge Snapping**: Coordinates magnetically snap to page boundaries and neighboring panel edges within 8 pixels.
+  - **Keyboard Arrow Nudging**: When a panel is selected, use **Arrow keys** to nudge by 1 pixel (or **`Shift + Arrow`** by 5 pixels). Hold **`Alt + Arrow`** to adjust width and height down to the exact pixel.
 - **Resize**: Click any box to select it. Eight handles appear on the corners and edges; drag any handle to adjust down to the pixel.
 - **Move**: Click and drag inside a selected box to reposition it.
 - **Reorder**: If you drew panels out of order, select a panel in the sidebar list and click **▲ Move Up** or **▼ Move Down** to adjust its reading sequence.
@@ -133,11 +137,13 @@ When launched, the application presents the **📚 Recent Projects** tab:
 
 | Action | Control / Shortcut | Description |
 |---|---|---|
-| **Draw Panel** | `Left Click + Drag` | Draw bounding box in reading order |
+| **Draw Panel** | `Left Click + Drag` | Draw bounding box in reading order (100% aligned with cursor) |
 | **Undo** | `Ctrl + Z` | Undo last panel draw, resize, move, or delete |
 | **Redo** | `Ctrl + Y` or `Ctrl + Shift + Z` | Redo previously undone action |
-| **🎯 Precision Fine-Tuning** | `P` or toggle checkbox | Dampens mouse speed on slow motions for pixel-perfect corner alignment |
-| **Temporary Precision** | Hold `Shift` while dragging | Dynamically enables precision speed damping |
+| **🎯 Precision Fine-Tuning** | `P` or toggle checkbox | Magnetic snap **outside black panel borders**, edge guidelines, & 4× Loupe HUD |
+| **Disable Snap (Freeform)** | Hold `Alt` while dragging | Bypasses magnetic snapping to place or resize boxes with complete freedom |
+| **Nudge Panel Position** | `Arrow Keys` (`Shift` = 5px) | Pixel-precise movement (1px step) |
+| **Nudge Panel Dimensions** | `Alt + Arrow Keys` (`Shift` = 5px) | Pixel-precise width/height expansion or reduction |
 | **Full-Page Panel** | `F` | Create a panel covering the whole page |
 | **Select Panel** | `Left Click` | Select a panel to view handles and details |
 | **Deselect** | `Right Click` or `Escape` | Clear selection or cancel active drag |
@@ -147,11 +153,12 @@ When launched, the application presents the **📚 Recent Projects** tab:
 | **Mark Finished** | `Ctrl + M` | Toggle book status between `[IN PROGRESS]` and `[FINISHED]` |
 | **Next Page** | `D` or `Right Arrow` | Go to next page |
 | **Prev Page** | `A` or `Left Arrow` | Go to previous page |
-| **Zoom In / Out** | `Ctrl + Wheel` or `Ctrl +` / `Ctrl -` | Zoom centered on cursor |
-| **Fit Window** | `View -> Fit Window` | Scale page to fit window dimensions |
-| **Fit Width** | `View -> Fit Width` | Scale page width to fit window |
+| **Scroll Canvas (Y-Axis)** | `Mouse Wheel` (up/down) | Pan vertically up and down the page |
+| **Zoom In / Out** | `Ctrl + Wheel` or `Ctrl +` / `Ctrl -` | Zoom centered on cursor (tracks live during drags) |
+| **Fit Full Container Width**| `View -> Fit Width` | Scale page to 100% width of renderer container (default on open) |
+| **Fit Window** | `View -> Fit Window` | Scale entire page height and width to fit window |
 | **Zoom 100%** | `View -> Zoom 100%` | Reset to 1:1 pixel scale |
-| **Pan Canvas** | `Middle Click + Drag` or `Space + Left Drag` | Move around zoomed page |
+| **Pan Canvas** | `Middle Click + Drag` or `Space + Left Drag` | Move freely around zoomed page |
 | **Save Dataset** | `Ctrl + S` | Export pages and save `annotation.json` |
 
 ---

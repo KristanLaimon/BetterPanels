@@ -338,6 +338,7 @@ class AnnotatorMainWindow(QMainWindow):
         self.canvas.panels_changed.connect(self._on_panels_changed)
         self.canvas.panel_selected.connect(self._on_canvas_panel_selected)
         self.canvas.cursor_position.connect(self._on_cursor_position)
+        self.canvas.zoom_changed.connect(lambda z: self.lbl_status_zoom.setText(f"Zoom: {int(z * 100)}%"))
         canvas_layout.addWidget(self.canvas, 1)
 
         # Bottom Page Navigation
@@ -399,8 +400,8 @@ class AnnotatorMainWindow(QMainWindow):
         self.chk_precision = QCheckBox("🎯 Precision Fine-Tuning")
         self.chk_precision.setChecked(True)
         self.chk_precision.setToolTip(
-            "Reduces mouse velocity when moving slowly around corners for pixel-precise alignment.\n"
-            "Uncheck to restore default 1:1 speed. (Shortcut: P, or hold Shift)"
+            "Magnetic snapping to borders/edges with Loupe HUD.\n"
+            "Uncheck for completely freeform drawing. (Shortcut: P, or hold Alt to bypass)"
         )
         self.chk_precision.toggled.connect(self.canvas.set_precision_mode)
         self.canvas.precision_mode_changed.connect(
@@ -584,11 +585,13 @@ class AnnotatorMainWindow(QMainWindow):
         is_fin = meta.get("finished", False)
         self.btn_mark_finished.setText("↩ Mark In Progress (Ctrl+M)" if is_fin else "✓ Mark Finished (Ctrl+M)")
 
-        self._render_current_page(fit=True)
+        self._render_current_page(fit_width=True)
         self.dataset_mgr.update_last_opened(self.book_title, self.current_page_num)
 
         # Switch to Annotator tab
         self.tabs.setCurrentIndex(1)
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(50, lambda: self.canvas.fit_to_width(self.canvas.rect()))
         self.status_bar.showMessage(f"Opened book '{self.book_title}'.", 3000)
 
     def _search_system_dialog(self):
@@ -677,7 +680,7 @@ class AnnotatorMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error Importing File", f"Could not import file:\n{str(e)}")
 
-    def _render_current_page(self, fit: bool = False):
+    def _render_current_page(self, fit_width: bool = False):
         if not self.reader or self.reader.total_pages == 0:
             return
 
@@ -691,9 +694,9 @@ class AnnotatorMainWindow(QMainWindow):
         pa = self.dataset_mgr.get_page_annotation(self.book_title, self.current_page_num)
         panels = [p.copy() for p in pa.frames]
 
-        self.canvas.set_page(pixmap, panels)
-        if fit:
-            self.canvas.fit_to_window(self.canvas.rect())
+        self.canvas.set_page(pixmap, panels, fit_width=fit_width)
+        if fit_width:
+            self.canvas.fit_to_width(self.canvas.rect())
 
         self.spin_page.blockSignals(True)
         self.slider_page.blockSignals(True)
@@ -746,6 +749,9 @@ class AnnotatorMainWindow(QMainWindow):
         if idx == 0:
             self._commit_current_page_panels()
             self.refresh_library()
+        elif idx == 1:
+            if getattr(self.canvas, "_pending_fit_width", False) or self.canvas.zoom_factor == 1.0:
+                self.canvas.fit_to_width(self.canvas.rect())
 
     def _on_panels_changed(self):
         self._commit_current_page_panels()

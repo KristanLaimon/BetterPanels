@@ -348,6 +348,350 @@ class TestAnnotator(unittest.TestCase):
         canvas.set_precision_mode(True)
         self.assertTrue(canvas.precision_mouse_enabled)
 
+    def test_rectangle_creation_aligned(self):
+        from PyQt6.QtCore import QPointF, Qt, QRect
+        from PyQt6.QtGui import QMouseEvent, QPixmap
+        canvas = MangaCanvas()
+        canvas.resize(800, 1000)
+        canvas.native_w = 400
+        canvas.native_h = 600
+        canvas.zoom_factor = 1.0
+        canvas.offset_x = 0.0
+        canvas.offset_y = 0.0
+
+        # Simulate mouse press at (50, 50)
+        press_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPointF(50, 50),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mousePressEvent(press_ev)
+        self.assertEqual(canvas._mode, "drawing")
+
+        # Simulate mouse move to (250, 300)
+        move_ev = QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            QPointF(250, 300),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseMoveEvent(move_ev)
+        self.assertIsNotNone(canvas._current_image_box)
+        # Verify rectangle is exactly aligned with cursor (50, 50) -> (250, 300)
+        self.assertEqual(canvas._current_image_box, (50, 50, 250, 300))
+
+        # Simulate release at (250, 300)
+        rel_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonRelease,
+            QPointF(250, 300),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseReleaseEvent(rel_ev)
+        self.assertEqual(len(canvas.panels), 1)
+        p = canvas.panels[0]
+        # Must be 100% aligned with where the mouse was moved and released
+        self.assertEqual((p.x, p.y, p.w, p.h), (50, 50, 200, 250))
+
+    def test_fit_to_width_on_open(self):
+        from PyQt6.QtCore import QRect
+        canvas = MangaCanvas()
+        canvas.resize(900, 1200)
+        canvas.native_w = 450
+        canvas.native_h = 700
+
+        # Call fit_to_width on container rect
+        canvas.fit_to_width(canvas.rect())
+
+        # Rendered image width (native_w * zoom) should fill 100% of container width (900)
+        self.assertAlmostEqual(canvas.native_w * canvas.zoom_factor, 900.0)
+        self.assertEqual(canvas.offset_x, 0.0)
+        self.assertEqual(canvas.offset_y, 0.0)
+
+    def test_keyboard_arrow_nudge(self):
+        from PyQt6.QtGui import QKeyEvent
+        from PyQt6.QtCore import Qt
+        canvas = MangaCanvas()
+        canvas.native_w = 500
+        canvas.native_h = 500
+        canvas.panels = [Panel(100, 100, 50, 50)]
+        canvas.selected_panel_index = 0
+
+        # Nudge right by 1px
+        ev_right = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier)
+        canvas.keyPressEvent(ev_right)
+        self.assertEqual(canvas.panels[0].x, 101)
+
+        # Nudge right with Shift by 5px
+        ev_shift_right = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier)
+        canvas.keyPressEvent(ev_shift_right)
+        self.assertEqual(canvas.panels[0].x, 106)
+
+        # Resize with Alt+Right by 1px
+        ev_alt_right = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.AltModifier)
+        canvas.keyPressEvent(ev_alt_right)
+        self.assertEqual(canvas.panels[0].w, 51)
+
+    def test_wheel_scroll_vs_ctrl_zoom(self):
+        from PyQt6.QtGui import QWheelEvent
+        from PyQt6.QtCore import QPointF, QPoint, Qt
+        canvas = MangaCanvas()
+        canvas.resize(800, 1000)
+        canvas.native_w = 400
+        canvas.native_h = 600
+        canvas.zoom_factor = 1.0
+        canvas.offset_x = 0.0
+        canvas.offset_y = 0.0
+
+        # Normal mouse wheel (scroll down): should scroll offset_y, NOT zoom
+        wheel_ev = QWheelEvent(
+            QPointF(200, 200),
+            QPointF(200, 200),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False
+        )
+        canvas.wheelEvent(wheel_ev)
+        self.assertEqual(canvas.zoom_factor, 1.0)
+        self.assertLess(canvas.offset_y, 0.0)
+
+        # Ctrl + mouse wheel (zoom in): should modify zoom_factor
+        old_zoom = canvas.zoom_factor
+        ctrl_wheel_ev = QWheelEvent(
+            QPointF(200, 200),
+            QPointF(200, 200),
+            QPoint(0, 0),
+            QPoint(0, 120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.ControlModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False
+        )
+        canvas.wheelEvent(ctrl_wheel_ev)
+        self.assertGreater(canvas.zoom_factor, old_zoom)
+
+    def test_wheel_drag_synchronous_update(self):
+        from PyQt6.QtGui import QMouseEvent, QWheelEvent
+        from PyQt6.QtCore import QPointF, QPoint, Qt
+        canvas = MangaCanvas()
+        canvas.resize(800, 1000)
+        canvas.native_w = 400
+        canvas.native_h = 600
+        canvas.zoom_factor = 1.0
+        canvas.offset_x = 0.0
+        canvas.offset_y = 0.0
+
+        # Start drawing
+        press_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPointF(50, 50),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mousePressEvent(press_ev)
+        self.assertEqual(canvas._mode, "drawing")
+
+        # Scroll while drawing
+        wheel_ev = QWheelEvent(
+            QPointF(100, 100),
+            QPointF(100, 100),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False
+        )
+        canvas.wheelEvent(wheel_ev)
+
+        # Drawing box must still exist and start anchor must be preserved at (50, 50)
+        self.assertIsNotNone(canvas._current_image_box)
+        self.assertEqual(canvas._current_image_box[0], 50)
+        self.assertEqual(canvas._current_image_box[1], 50)
+
+    def test_alt_disables_magnetic_snap(self):
+        canvas = MangaCanvas()
+        canvas.native_w = 500
+        canvas.native_h = 500
+        canvas.set_precision_mode(True)
+
+        # Near page edge (x=3, within snap radius)
+        snapped_x, snapped_y = canvas._apply_precision_snap(3, 3, is_alt_held=False)
+        self.assertEqual(snapped_x, 0)
+        self.assertEqual(snapped_y, 0)
+
+        # Holding Alt must bypass snap completely
+        free_x, free_y = canvas._apply_precision_snap(3, 3, is_alt_held=True)
+        self.assertEqual(free_x, 3)
+        self.assertEqual(free_y, 3)
+
+    def test_snap_outside_black_border(self):
+        from PyQt6.QtGui import QImage, QPainter, QColor, QPixmap
+        # Create 400x400 white canvas with a 4px black panel border
+        # Horizontal stroke: y=100..103 across x=50..250
+        # Vertical stroke: x=150..153 across y=50..250
+        img = QImage(400, 400, QImage.Format.Format_Grayscale8)
+        img.fill(255)  # white paper/gutter
+        painter = QPainter(img)
+        painter.setPen(QColor(0, 0, 0))
+        # Draw 4px horizontal black line: y=100, 101, 102, 103
+        for dy in range(4):
+            painter.drawLine(50, 100 + dy, 250, 100 + dy)
+        # Draw 4px vertical black line: x=150, 151, 152, 153
+        for dx in range(4):
+            painter.drawLine(150 + dx, 50, 150 + dx, 250)
+        painter.end()
+
+        canvas = MangaCanvas()
+        canvas.set_page(QPixmap.fromImage(img), [])
+        canvas.set_precision_mode(True)
+
+        # Test snapping horizontal border (y=100..103)
+        # 1. When bottom border moves near line, it should snap OUTSIDE (y=104, in gutter below)
+        _, snap_bottom = canvas._apply_precision_snap(100, 102, is_alt_held=False, side_y="bottom")
+        self.assertEqual(snap_bottom, 104)
+
+        # 2. When top border moves near line, it should snap OUTSIDE (y=100, in gutter above)
+        _, snap_top = canvas._apply_precision_snap(100, 101, is_alt_held=False, side_y="top")
+        self.assertEqual(snap_top, 100)
+
+        # Test snapping vertical border (x=150..153)
+        # 3. When right border moves near line, it should snap OUTSIDE (x=154, in gutter right)
+        snap_right, _ = canvas._apply_precision_snap(152, 180, is_alt_held=False, side_x="right")
+        self.assertEqual(snap_right, 154)
+
+        # 4. When left border moves near line, it should snap OUTSIDE (x=150, in gutter left)
+        snap_left, _ = canvas._apply_precision_snap(151, 180, is_alt_held=False, side_x="left")
+        self.assertEqual(snap_left, 150)
+
+    def test_mouse_cursor_always_visible_on_hover(self):
+        from PyQt6.QtCore import QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent, QCursor
+        canvas = MangaCanvas()
+        canvas.resize(800, 600)
+        canvas.set_precision_mode(True)
+
+        # Mouse move without dragging (hover state on empty canvas)
+        ev = QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            QPointF(200, 200),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseMoveEvent(ev)
+
+        # Default cursor must be the normal visible ArrowCursor
+        self.assertEqual(canvas.cursor().shape(), Qt.CursorShape.ArrowCursor)
+
+    def test_drag_move_existing_panel(self):
+        from PyQt6.QtCore import QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+        canvas = MangaCanvas()
+        canvas.resize(800, 800)
+        canvas.native_w = 400
+        canvas.native_h = 400
+        canvas.zoom_factor = 1.0
+        canvas.offset_x = 0.0
+        canvas.offset_y = 0.0
+        canvas.panels = [Panel(50, 50, 100, 100)]
+        canvas.selected_panel_index = -1
+
+        # Press inside existing panel at (80, 80)
+        press_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPointF(80, 80),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mousePressEvent(press_ev)
+        self.assertEqual(canvas._mode, "moving")
+        self.assertEqual(canvas.selected_panel_index, 0)
+
+        # Drag by +30px X, +40px Y to (110, 120)
+        move_ev = QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            QPointF(110, 120),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseMoveEvent(move_ev)
+        self.assertEqual(canvas.panels[0].x, 80)  # 50 + 30
+        self.assertEqual(canvas.panels[0].y, 90)  # 50 + 40
+        self.assertEqual(canvas.panels[0].w, 100)
+        self.assertEqual(canvas.panels[0].h, 100)
+
+        # Release mouse
+        rel_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonRelease,
+            QPointF(110, 120),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseReleaseEvent(rel_ev)
+        self.assertEqual(canvas._mode, "idle")
+        self.assertEqual((canvas.panels[0].x, canvas.panels[0].y), (80, 90))
+
+    def test_drag_resize_existing_panel(self):
+        from PyQt6.QtCore import QPointF, Qt
+        from PyQt6.QtGui import QMouseEvent
+        canvas = MangaCanvas()
+        canvas.resize(800, 800)
+        canvas.native_w = 400
+        canvas.native_h = 400
+        canvas.zoom_factor = 1.0
+        canvas.offset_x = 0.0
+        canvas.offset_y = 0.0
+        canvas.panels = [Panel(50, 50, 100, 100)]
+        canvas.selected_panel_index = 0  # panel selected so handles are active
+
+        # Handle BR is at (50 + 100, 50 + 100) = (150, 150)
+        press_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPointF(150, 150),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mousePressEvent(press_ev)
+        self.assertEqual(canvas._mode, "resizing")
+
+        # Drag BR handle by +20px X, +30px Y to (170, 180)
+        move_ev = QMouseEvent(
+            QMouseEvent.Type.MouseMove,
+            QPointF(170, 180),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseMoveEvent(move_ev)
+        self.assertEqual(canvas.panels[0].w, 120)
+        self.assertEqual(canvas.panels[0].h, 130)
+
+        # Release mouse
+        rel_ev = QMouseEvent(
+            QMouseEvent.Type.MouseButtonRelease,
+            QPointF(170, 180),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier
+        )
+        canvas.mouseReleaseEvent(rel_ev)
+        self.assertEqual(canvas._mode, "idle")
+        self.assertEqual((canvas.panels[0].w, canvas.panels[0].h), (120, 130))
+
 
 if __name__ == "__main__":
     unittest.main()
+

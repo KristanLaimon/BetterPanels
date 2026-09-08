@@ -5,6 +5,7 @@ zoom/pan, number badges, and full-page panel shortcuts.
 """
 
 from typing import List, Optional, Tuple
+import math
 from PyQt6.QtCore import Qt, QRect, QRectF, QPoint, QPointF, pyqtSignal
 from PyQt6.QtGui import (
     QPainter, QPen, QBrush, QColor, QFont, QPixmap, QImage, QCursor,
@@ -39,6 +40,7 @@ class MangaCanvas(QWidget):
     status_message = pyqtSignal(str)
     cursor_position = pyqtSignal(int, int)  # (native_x, native_y)
     precision_mode_changed = pyqtSignal(bool)
+    zoom_changed = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,15 +55,20 @@ class MangaCanvas(QWidget):
 
         # View transform
         self.zoom_factor = 1.0
-        self.offset_x = 0
-        self.offset_y = 0
+        self.offset_x = 0.0
+        self.offset_y = 0.0
+        self._pending_fit_width = False
 
-        # Precision mouse fine-tuning
+        # Precision fine-tuning & Loupe HUD
         self.precision_mouse_enabled = True
-        self._accum_delta_x = 0.0
-        self._accum_delta_y = 0.0
-        self._last_raw_mouse_pos: Optional[QPoint] = None
         self._current_image_box: Optional[Tuple[int, int, int, int]] = None
+        self._active_ix = 0
+        self._active_iy = 0
+        self._snap_guide_x: Optional[int] = None
+        self._snap_guide_y: Optional[int] = None
+        self._gray_image: Optional[QImage] = None
+        self._gray_bytes: Optional[bytes] = None
+        self._bpl: int = 0
 
         # Undo / Redo history stacks
         self._undo_stack: List[List[Panel]] = []
@@ -71,18 +78,54 @@ class MangaCanvas(QWidget):
         # Interaction state
         self._mode = "idle"  # "idle", "drawing", "resizing", "moving", "panning"
         self._drag_start_pos: Optional[QPoint] = None
+        self._drag_start_image_x = 0
+        self._drag_start_image_y = 0
         self._current_mouse_pos: Optional[QPoint] = None
         self._active_handle = HANDLE_NONE
         self._panel_before_drag: Optional[Panel] = None
         self._space_pressed = False
         self._pan_start_pos: Optional[QPoint] = None
 
+    def _update_hover_cursor(self, pos: Optional[QPoint] = None):
+        """Set the appropriate visible mouse cursor based on hit test or mode."""
+        if self._space_pressed or self._mode == "panning":
+            self.setCursor(QCursor(Qt.CursorShape.ClosedHandCursor if self._mode == "panning" else Qt.CursorShape.OpenHandCursor))
+            return
+
+        if pos is None:
+            pos = self.mapFromGlobal(QCursor.pos())
+
+        handle, _ = self._hit_test(pos)
+        if handle in (HANDLE_TL, HANDLE_BR):
+            self.setCursor(QCursor(Qt.CursorShape.SizeFDiagCursor))
+        elif handle in (HANDLE_TR, HANDLE_BL):
+            self.setCursor(QCursor(Qt.CursorShape.SizeBDiagCursor))
+        elif handle in (HANDLE_T, HANDLE_B):
+            self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
+        elif handle in (HANDLE_L, HANDLE_R):
+            self.setCursor(QCursor(Qt.CursorShape.SizeHorCursor))
+        elif handle == HANDLE_MOVE:
+            self.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
+        else:
+            self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+
     def set_precision_mode(self, enabled: bool):
-        """Enable or disable slow mouse precision damping mode."""
+        """Enable or disable magnetic snap mode."""
         self.precision_mouse_enabled = bool(enabled)
+        self._update_hover_cursor()
         self.precision_mode_changed.emit(self.precision_mouse_enabled)
         state_str = "ON" if self.precision_mouse_enabled else "OFF"
-        self.status_message.emit(f"Precision mouse mode: {state_str}")
+        self.status_message.emit(f"Precision mode: {state_str}")
+        self.update()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._update_hover_cursor()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+        self.update()
 
     def push_undo(self):
         """Save current panels state to undo stack and clear redo stack."""
@@ -115,26 +158,45 @@ class MangaCanvas(QWidget):
         self.update()
         self.status_message.emit("Redo performed.")
 
-    def set_page(self, pixmap: Optional[QPixmap], panels: List[Panel]):
+    def set_page(self, pixmap: Optional[QPixmap], panels: List[Panel], fit_width: bool = False):
         """Update current page pixmap and panels."""
         self._pixmap = pixmap
         if pixmap and not pixmap.isNull():
             self.native_w = pixmap.width()
             self.native_h = pixmap.height()
+            try:
+                self._gray_image = pixmap.toImage().convertToFormat(QImage.Format.Format_Grayscale8)
+                self._gray_bytes = self._gray_image.constBits().asstring(self._gray_image.sizeInBytes())
+                self._bpl = self._gray_image.bytesPerLine()
+            except Exception:
+                self._gray_image = None
+                self._gray_bytes = None
+                self._bpl = 0
         else:
             self.native_w = 0
             self.native_h = 0
+            self._gray_image = None
+            self._gray_bytes = None
+            self._bpl = 0
 
         self.panels = [p.copy() for p in panels]
         self.selected_panel_index = -1
         self._mode = "idle"
         self._undo_stack.clear()
         self._redo_stack.clear()
+        if fit_width or self._pending_fit_width:
+            self.fit_to_width(self.rect())
         self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if getattr(self, "_pending_fit_width", False) and self.native_w > 0:
+            self.fit_to_width(self.rect())
 
     def set_zoom(self, zoom: float):
         """Set zoom factor clamped between 0.05 and 10.0."""
         self.zoom_factor = max(0.05, min(10.0, float(zoom)))
+        self.zoom_changed.emit(self.zoom_factor)
         self.update()
 
     def fit_to_window(self, view_rect: QRect):
@@ -145,15 +207,198 @@ class MangaCanvas(QWidget):
         scale_h = view_rect.height() / self.native_h
         new_zoom = min(scale_w, scale_h) * 0.95
         self.zoom_factor = max(0.05, min(10.0, new_zoom))
+        self.offset_x = max(0.0, (view_rect.width() - self.native_w * self.zoom_factor) / 2.0)
+        self.offset_y = max(0.0, (view_rect.height() - self.native_h * self.zoom_factor) / 2.0)
+        self.zoom_changed.emit(self.zoom_factor)
         self.update()
 
-    def fit_to_width(self, view_rect: QRect):
-        """Scale image to fit width of view_rect."""
-        if self.native_w == 0:
+    def fit_to_width(self, view_rect: Optional[QRect] = None):
+        """Scale image so its width fills 100% of the renderer container."""
+        rect = view_rect if (view_rect and view_rect.width() > 10) else self.rect()
+        if self.native_w == 0 or rect.width() <= 10:
+            self._pending_fit_width = True
             return
-        new_zoom = (view_rect.width() / self.native_w) * 0.96
+        new_zoom = float(rect.width()) / float(self.native_w)
         self.zoom_factor = max(0.05, min(10.0, new_zoom))
+        self.offset_x = 0.0
+        self.offset_y = 0.0
+        self._pending_fit_width = False
+        self.zoom_changed.emit(self.zoom_factor)
         self.update()
+
+    def _find_horizontal_ink_border(self, ix: int, iy: int, search_r: int, side: str = "auto") -> Optional[int]:
+        """Find horizontal black panel border within search_r and return coordinate OUTSIDE the border."""
+        if not self._gray_bytes or self.native_w == 0 or self.native_h == 0:
+            return None
+
+        h, w = self.native_h, self.native_w
+        bpl = self._bpl
+        buf = self._gray_bytes
+
+        y_min = max(0, iy - search_r)
+        y_max = min(h - 1, iy + search_r)
+        x_min = max(0, ix - 15)
+        x_max = min(w - 1, ix + 15)
+        span_len = x_max - x_min + 1
+        if span_len < 10:
+            return None
+
+        dark_rows = []
+        for y in range(y_min, y_max + 1):
+            row_offset = y * bpl + x_min
+            dark_count = 0
+            for x in range(span_len):
+                if buf[row_offset + x] < 110:
+                    dark_count += 1
+            if dark_count >= span_len * 0.5:
+                dark_rows.append(y)
+
+        if not dark_rows:
+            return None
+
+        # Group contiguous dark rows into stroke blocks
+        blocks = []
+        curr = [dark_rows[0]]
+        for r in dark_rows[1:]:
+            if r == curr[-1] + 1:
+                curr.append(r)
+            else:
+                blocks.append(curr)
+                curr = [r]
+        blocks.append(curr)
+
+        best_block = min(blocks, key=lambda b: abs((b[0] + b[-1]) / 2.0 - iy))
+        y_top = best_block[0]
+        y_bottom = best_block[-1]
+
+        if side == "bottom":
+            # Outside bottom border: just below the black stroke (in the gutter)
+            return min(h, y_bottom + 1)
+        elif side == "top":
+            # Outside top border: just above the black stroke (in the gutter)
+            return max(0, y_top)
+        else:
+            # Auto: detect which side has higher luminance (white gutter)
+            above_sum = sum(buf[y * bpl + x] for y in range(max(0, y_top - 4), y_top) for x in range(x_min, x_max + 1))
+            below_sum = sum(buf[y * bpl + x] for y in range(y_bottom + 1, min(h, y_bottom + 5)) for x in range(x_min, x_max + 1))
+            return min(h, y_bottom + 1) if below_sum >= above_sum else max(0, y_top)
+
+    def _find_vertical_ink_border(self, ix: int, iy: int, search_r: int, side: str = "auto") -> Optional[int]:
+        """Find vertical black panel border within search_r and return coordinate OUTSIDE the border."""
+        if not self._gray_bytes or self.native_w == 0 or self.native_h == 0:
+            return None
+
+        h, w = self.native_h, self.native_w
+        bpl = self._bpl
+        buf = self._gray_bytes
+
+        x_min = max(0, ix - search_r)
+        x_max = min(w - 1, ix + search_r)
+        y_min = max(0, iy - 15)
+        y_max = min(h - 1, iy + 15)
+        span_len = y_max - y_min + 1
+        if span_len < 10:
+            return None
+
+        dark_cols = []
+        for x in range(x_min, x_max + 1):
+            dark_count = 0
+            for y in range(y_min, y_max + 1):
+                if buf[y * bpl + x] < 110:
+                    dark_count += 1
+            if dark_count >= span_len * 0.5:
+                dark_cols.append(x)
+
+        if not dark_cols:
+            return None
+
+        # Group contiguous dark columns into stroke blocks
+        blocks = []
+        curr = [dark_cols[0]]
+        for c in dark_cols[1:]:
+            if c == curr[-1] + 1:
+                curr.append(c)
+            else:
+                blocks.append(curr)
+                curr = [c]
+        blocks.append(curr)
+
+        best_block = min(blocks, key=lambda b: abs((b[0] + b[-1]) / 2.0 - ix))
+        x_left = best_block[0]
+        x_right = best_block[-1]
+
+        if side == "right":
+            # Outside right border: just to the right of the black stroke (in the gutter)
+            return min(w, x_right + 1)
+        elif side == "left":
+            # Outside left border: just to the left of the black stroke (in the gutter)
+            return max(0, x_left)
+        else:
+            # Auto: detect which side has higher luminance (white gutter)
+            left_sum = sum(buf[y * bpl + x] for y in range(y_min, y_max + 1) for x in range(max(0, x_left - 4), x_left))
+            right_sum = sum(buf[y * bpl + x] for y in range(y_min, y_max + 1) for x in range(x_right + 1, min(w, x_right + 5)))
+            return min(w, x_right + 1) if right_sum >= left_sum else max(0, x_left)
+
+    def _apply_precision_snap(
+        self,
+        ix: int,
+        iy: int,
+        is_alt_held: bool = False,
+        side_x: str = "auto",
+        side_y: str = "auto"
+    ) -> Tuple[int, int]:
+        """Magnetically snap coordinate outside the black borders of panels, page edges, or existing panels.
+        Holding Alt disables magnetic snap for freeform adjustments."""
+        if not self.precision_mouse_enabled or is_alt_held:
+            self._snap_guide_x = None
+            self._snap_guide_y = None
+            return ix, iy
+
+        # Snap radius in image pixels (~10 screen pixels for pleasant light magnet feel)
+        snap_r = max(4, int(round(10.0 / max(0.1, self.zoom_factor))))
+
+        candidates_x = [0, self.native_w]
+        candidates_y = [0, self.native_h]
+
+        # 1. Existing panel boundaries (snap to outer edges)
+        for idx, panel in enumerate(self.panels):
+            if idx == self.selected_panel_index:
+                continue
+            candidates_x.append(panel.x)
+            candidates_x.append(panel.x + panel.w)
+            candidates_y.append(panel.y)
+            candidates_y.append(panel.y + panel.h)
+
+        # 2. Image black border lines (snaps OUTSIDE the black border stroke)
+        ink_x = self._find_vertical_ink_border(ix, iy, snap_r, side=side_x)
+        if ink_x is not None:
+            candidates_x.append(ink_x)
+
+        ink_y = self._find_horizontal_ink_border(ix, iy, snap_r, side=side_y)
+        if ink_y is not None:
+            candidates_y.append(ink_y)
+
+        # Select closest valid X candidate within snap_r
+        valid_x = [cx for cx in candidates_x if abs(ix - cx) <= snap_r]
+        if valid_x:
+            snapped_x = min(valid_x, key=lambda cx: abs(ix - cx))
+            guide_x = snapped_x
+        else:
+            snapped_x = ix
+            guide_x = None
+
+        # Select closest valid Y candidate within snap_r
+        valid_y = [cy for cy in candidates_y if abs(iy - cy) <= snap_r]
+        if valid_y:
+            snapped_y = min(valid_y, key=lambda cy: abs(iy - cy))
+            guide_y = snapped_y
+        else:
+            snapped_y = iy
+            guide_y = None
+
+        self._snap_guide_x = guide_x
+        self._snap_guide_y = guide_y
+        return snapped_x, snapped_y
 
     def image_to_widget(self, ix: float, iy: float) -> Tuple[float, float]:
         """Convert native image coordinates to widget coordinates."""
@@ -283,6 +528,39 @@ class MangaCanvas(QWidget):
                 self.redo()
                 return
 
+        # Keyboard Arrow Nudge for Selected Panel
+        if 0 <= self.selected_panel_index < len(self.panels):
+            p = self.panels[self.selected_panel_index]
+            step = 5 if (event.modifiers() & Qt.KeyboardModifier.ShiftModifier) else 1
+            is_alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+
+            if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down):
+                self.push_undo()
+                if is_alt:
+                    # Resize right / bottom
+                    if event.key() == Qt.Key.Key_Left:
+                        p.w = max(MIN_BOX_SIZE, p.w - step)
+                    elif event.key() == Qt.Key.Key_Right:
+                        p.w = min(self.native_w - p.x, p.w + step)
+                    elif event.key() == Qt.Key.Key_Up:
+                        p.h = max(MIN_BOX_SIZE, p.h - step)
+                    elif event.key() == Qt.Key.Key_Down:
+                        p.h = min(self.native_h - p.y, p.h + step)
+                else:
+                    # Move
+                    if event.key() == Qt.Key.Key_Left:
+                        p.x = max(0, p.x - step)
+                    elif event.key() == Qt.Key.Key_Right:
+                        p.x = min(self.native_w - p.w, p.x + step)
+                    elif event.key() == Qt.Key.Key_Up:
+                        p.y = max(0, p.y - step)
+                    elif event.key() == Qt.Key.Key_Down:
+                        p.y = min(self.native_h - p.h, p.y + step)
+                self.panels_changed.emit()
+                self.update()
+                self.status_message.emit(f"Nudged panel [{self.selected_panel_index + 1}] to ({p.x}, {p.y}, {p.w}, {p.h})")
+                return
+
         if event.key() == Qt.Key.Key_Space:
             self._space_pressed = True
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
@@ -308,19 +586,111 @@ class MangaCanvas(QWidget):
         super().keyReleaseEvent(event)
 
     def wheelEvent(self, event: QWheelEvent):
-        # Zoom with wheel
         delta = event.angleDelta().y()
-        factor = 1.15 if delta > 0 else 0.85
+        if delta == 0:
+            delta = event.angleDelta().x()
+            if delta == 0:
+                return
 
-        # Zoom centered on mouse pointer
-        pos = event.position()
-        old_zoom = self.zoom_factor
-        new_zoom = max(0.05, min(10.0, old_zoom * factor))
-        if old_zoom != new_zoom:
-            self.offset_x = pos.x() - (pos.x() - self.offset_x) * (new_zoom / old_zoom)
-            self.offset_y = pos.y() - (pos.y() - self.offset_y) * (new_zoom / old_zoom)
-            self.zoom_factor = new_zoom
-            self.update()
+        modifiers = event.modifiers()
+        is_ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+        is_alt = bool(modifiers & Qt.KeyboardModifier.AltModifier)
+
+        pos = event.position().toPoint()
+
+        if is_ctrl:
+            # Zoom centered on mouse pointer (Ctrl + mouse wheel)
+            factor = 1.15 if delta > 0 else 0.85
+            old_zoom = self.zoom_factor
+            new_zoom = max(0.05, min(10.0, old_zoom * factor))
+            if old_zoom != new_zoom:
+                self.offset_x = pos.x() - (pos.x() - self.offset_x) * (new_zoom / old_zoom)
+                self.offset_y = pos.y() - (pos.y() - self.offset_y) * (new_zoom / old_zoom)
+                self.zoom_factor = new_zoom
+                self.zoom_changed.emit(self.zoom_factor)
+        else:
+            # Regular wheel: Scroll vertically in Y-axis (Pan Y)
+            # Wheel up (delta > 0) scrolls page up (offset_y increases).
+            # Wheel down (delta < 0) scrolls page down (offset_y decreases).
+            scroll_step = delta * 0.75
+            self.offset_y += scroll_step
+            # Clamp offset_y to prevent losing the image entirely
+            img_h = self.native_h * self.zoom_factor
+            view_h = float(self.rect().height())
+            if img_h > view_h:
+                min_y = view_h - img_h - 100.0
+                max_y = 100.0
+            else:
+                min_y = -50.0
+                max_y = max(50.0, view_h - 50.0)
+            self.offset_y = max(min_y, min(max_y, self.offset_y))
+
+        # Synchronous tracking update if currently drawing, moving, or resizing
+        self._current_mouse_pos = pos
+        curr_ix, curr_iy = self.widget_to_image(pos.x(), pos.y())
+        use_precision = (self.precision_mouse_enabled or bool(modifiers & Qt.KeyboardModifier.ShiftModifier)) and not is_alt
+        side_x = "auto"
+        side_y = "auto"
+        if self._mode == "drawing":
+            side_x = "right" if curr_ix >= self._drag_start_image_x else "left"
+            side_y = "bottom" if curr_iy >= self._drag_start_image_y else "top"
+        elif self._mode == "resizing":
+            if self._active_handle in (HANDLE_TR, HANDLE_R, HANDLE_BR):
+                side_x = "right"
+            elif self._active_handle in (HANDLE_TL, HANDLE_L, HANDLE_BL):
+                side_x = "left"
+            if self._active_handle in (HANDLE_BL, HANDLE_B, HANDLE_BR):
+                side_y = "bottom"
+            elif self._active_handle in (HANDLE_TL, HANDLE_T, HANDLE_TR):
+                side_y = "top"
+
+        if use_precision:
+            curr_ix, curr_iy = self._apply_precision_snap(curr_ix, curr_iy, is_alt_held=is_alt, side_x=side_x, side_y=side_y)
+        else:
+            self._snap_guide_x = None
+            self._snap_guide_y = None
+
+        self._active_ix = curr_ix
+        self._active_iy = curr_iy
+
+        if self._mode == "drawing":
+            start_ix = self._drag_start_image_x
+            start_iy = self._drag_start_image_y
+            self._current_image_box = (start_ix, start_iy, curr_ix, curr_iy)
+
+        elif self._mode == "moving" and self._panel_before_drag and 0 <= self.selected_panel_index < len(self.panels):
+            orig = self._panel_before_drag
+            start_ix = self._drag_start_image_x
+            start_iy = self._drag_start_image_y
+            dx = curr_ix - start_ix
+            dy = curr_iy - start_iy
+            nx = max(0, min(self.native_w - orig.w, orig.x + dx))
+            ny = max(0, min(self.native_h - orig.h, orig.y + dy))
+            if use_precision:
+                nx, ny = self._apply_precision_snap(nx, ny, is_alt_held=is_alt, side_x="auto", side_y="auto")
+            p = self.panels[self.selected_panel_index]
+            p.x = nx
+            p.y = ny
+
+        elif self._mode == "resizing" and self._panel_before_drag and 0 <= self.selected_panel_index < len(self.panels):
+            orig = self._panel_before_drag
+            x, y, w, h = orig.x, orig.y, orig.w, orig.h
+            if self._active_handle in (HANDLE_TL, HANDLE_L, HANDLE_BL):
+                new_x = min(orig.x + orig.w - MIN_BOX_SIZE, max(0, curr_ix))
+                w = orig.x + orig.w - new_x
+                x = new_x
+            if self._active_handle in (HANDLE_TR, HANDLE_R, HANDLE_BR):
+                w = max(MIN_BOX_SIZE, min(self.native_w - orig.x, curr_ix - orig.x))
+            if self._active_handle in (HANDLE_TL, HANDLE_T, HANDLE_TR):
+                new_y = min(orig.y + orig.h - MIN_BOX_SIZE, max(0, curr_iy))
+                h = orig.y + orig.h - new_y
+                y = new_y
+            if self._active_handle in (HANDLE_BL, HANDLE_B, HANDLE_BR):
+                h = max(MIN_BOX_SIZE, min(self.native_h - orig.y, curr_iy - orig.y))
+            p = self.panels[self.selected_panel_index]
+            p.x, p.y, p.w, p.h = x, y, w, h
+
+        self.update()
 
     def mousePressEvent(self, event: QMouseEvent):
         pos = event.position().toPoint()
@@ -334,31 +704,36 @@ class MangaCanvas(QWidget):
 
         if event.button() == Qt.MouseButton.LeftButton:
             self._panels_at_drag_start = [p.copy() for p in self.panels]
-            self._last_raw_mouse_pos = pos
-            self._accum_delta_x = 0.0
-            self._accum_delta_y = 0.0
             self._current_image_box = None
+            self._drag_start_pos = pos
+            self._current_mouse_pos = pos
+
+            start_ix, start_iy = self.widget_to_image(pos.x(), pos.y())
+            self._drag_start_image_x = start_ix
+            self._drag_start_image_y = start_iy
 
             handle, panel_idx = self._hit_test(pos)
             if handle in (HANDLE_TL, HANDLE_T, HANDLE_TR, HANDLE_R, HANDLE_BR, HANDLE_B, HANDLE_BL, HANDLE_L):
                 self._mode = "resizing"
                 self._active_handle = handle
-                self._drag_start_pos = pos
                 self._panel_before_drag = self.panels[self.selected_panel_index].copy()
+                self._active_ix = start_ix
+                self._active_iy = start_iy
             elif handle == HANDLE_MOVE:
                 self.select_panel(panel_idx)
                 self._mode = "moving"
                 self._active_handle = HANDLE_MOVE
-                self._drag_start_pos = pos
                 self._panel_before_drag = self.panels[panel_idx].copy()
+                self._active_ix = self.panels[panel_idx].x
+                self._active_iy = self.panels[panel_idx].y
             else:
                 # Start drawing new panel box
                 self.select_panel(-1)
                 self._mode = "drawing"
-                self._drag_start_pos = pos
-                self._current_mouse_pos = pos
-                start_ix, start_iy = self.widget_to_image(pos.x(), pos.y())
+                self._active_handle = HANDLE_NONE
                 self._current_image_box = (start_ix, start_iy, start_ix, start_iy)
+                self._active_ix = start_ix
+                self._active_iy = start_iy
 
         elif event.button() == Qt.MouseButton.RightButton:
             # Right click deselects
@@ -368,8 +743,11 @@ class MangaCanvas(QWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         pos = event.position().toPoint()
+        is_alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+
         ix, iy = self.widget_to_image(pos.x(), pos.y())
         self.cursor_position.emit(ix, iy)
+        self._current_mouse_pos = pos
 
         if self._mode == "panning":
             if self._pan_start_pos:
@@ -381,56 +759,51 @@ class MangaCanvas(QWidget):
                 self.update()
             return
 
-        # Calculate precision mouse step with velocity damping
-        raw_step_x = 0.0
-        raw_step_y = 0.0
-        if self._last_raw_mouse_pos is not None:
-            raw_step_x = pos.x() - self._last_raw_mouse_pos.x()
-            raw_step_y = pos.y() - self._last_raw_mouse_pos.y()
-        self._last_raw_mouse_pos = pos
-
-        dist = (raw_step_x ** 2 + raw_step_y ** 2) ** 0.5
-        use_precision = self.precision_mouse_enabled or bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-
-        if use_precision and dist > 0:
-            # When moving slowly (dist < 8px), dampen speed by 4x for millimeter pixel precision
-            if dist < 6.0:
-                damping = 0.25
-            elif dist < 18.0:
-                damping = 0.25 + 0.75 * ((dist - 6.0) / 12.0)
-            else:
-                damping = 1.0
-        else:
-            damping = 1.0
-
-        self._accum_delta_x += raw_step_x * damping
-        self._accum_delta_y += raw_step_y * damping
-
-        # Image delta
-        dx = int(round(self._accum_delta_x / self.zoom_factor))
-        dy = int(round(self._accum_delta_y / self.zoom_factor))
+        use_precision = self.precision_mouse_enabled and not is_alt
 
         if self._mode == "drawing" and self._drag_start_pos:
-            start_ix, start_iy = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
-            curr_ix = max(0, min(self.native_w, start_ix + dx))
-            curr_iy = max(0, min(self.native_h, start_iy + dy))
+            start_ix = self._drag_start_image_x
+            start_iy = self._drag_start_image_y
+            curr_ix = ix
+            curr_iy = iy
+            if use_precision:
+                side_x = "right" if curr_ix >= start_ix else "left"
+                side_y = "bottom" if curr_iy >= start_iy else "top"
+                curr_ix, curr_iy = self._apply_precision_snap(curr_ix, curr_iy, is_alt_held=is_alt, side_x=side_x, side_y=side_y)
+            else:
+                self._snap_guide_x = None
+                self._snap_guide_y = None
             self._current_image_box = (start_ix, start_iy, curr_ix, curr_iy)
-            self._current_mouse_pos = pos
+            self._active_ix = curr_ix
+            self._active_iy = curr_iy
             self.update()
             return
 
         if self._mode == "moving" and self._panel_before_drag and 0 <= self.selected_panel_index < len(self.panels):
             orig = self._panel_before_drag
+            start_ix = self._drag_start_image_x
+            start_iy = self._drag_start_image_y
+            dx = ix - start_ix
+            dy = iy - start_iy
+
             nx = max(0, min(self.native_w - orig.w, orig.x + dx))
             ny = max(0, min(self.native_h - orig.h, orig.y + dy))
+
             p = self.panels[self.selected_panel_index]
             p.x = nx
             p.y = ny
+            self._active_ix = nx
+            self._active_iy = ny
             self.update()
             return
 
         if self._mode == "resizing" and self._panel_before_drag and 0 <= self.selected_panel_index < len(self.panels):
             orig = self._panel_before_drag
+            start_ix = self._drag_start_image_x
+            start_iy = self._drag_start_image_y
+            dx = ix - start_ix
+            dy = iy - start_iy
+
             x, y, w, h = orig.x, orig.y, orig.w, orig.h
 
             if self._active_handle in (HANDLE_TL, HANDLE_L, HANDLE_BL):
@@ -446,44 +819,57 @@ class MangaCanvas(QWidget):
             if self._active_handle in (HANDLE_BL, HANDLE_B, HANDLE_BR):
                 h = max(MIN_BOX_SIZE, min(self.native_h - orig.y, orig.h + dy))
 
+            if use_precision:
+                if self._active_handle in (HANDLE_TR, HANDLE_R, HANDLE_BR):
+                    snapped_right, _ = self._apply_precision_snap(x + w, y, is_alt_held=is_alt, side_x="right", side_y="none")
+                    w = max(MIN_BOX_SIZE, min(self.native_w - x, snapped_right - x))
+                elif self._active_handle in (HANDLE_TL, HANDLE_L, HANDLE_BL):
+                    snapped_left, _ = self._apply_precision_snap(x, y, is_alt_held=is_alt, side_x="left", side_y="none")
+                    new_x = min(orig.x + orig.w - MIN_BOX_SIZE, max(0, snapped_left))
+                    w = orig.x + orig.w - new_x
+                    x = new_x
+
+                if self._active_handle in (HANDLE_BL, HANDLE_B, HANDLE_BR):
+                    _, snapped_bottom = self._apply_precision_snap(x, y + h, is_alt_held=is_alt, side_x="none", side_y="bottom")
+                    h = max(MIN_BOX_SIZE, min(self.native_h - y, snapped_bottom - y))
+                elif self._active_handle in (HANDLE_TL, HANDLE_T, HANDLE_TR):
+                    _, snapped_top = self._apply_precision_snap(x, y, is_alt_held=is_alt, side_x="none", side_y="top")
+                    new_y = min(orig.y + orig.h - MIN_BOX_SIZE, max(0, snapped_top))
+                    h = orig.y + orig.h - new_y
+                    y = new_y
+            else:
+                self._snap_guide_x = None
+                self._snap_guide_y = None
+
             p = self.panels[self.selected_panel_index]
             p.x, p.y, p.w, p.h = x, y, w, h
+            self._active_ix = curr_ix if 'curr_ix' in locals() else ix
+            self._active_iy = curr_iy if 'curr_iy' in locals() else iy
             self.update()
             return
 
-        # Update cursor based on hover
-        if self._space_pressed:
-            self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
-            return
-
-        handle, _ = self._hit_test(pos)
-        if handle in (HANDLE_TL, HANDLE_BR):
-            self.setCursor(QCursor(Qt.CursorShape.SizeFDiagCursor))
-        elif handle in (HANDLE_TR, HANDLE_BL):
-            self.setCursor(QCursor(Qt.CursorShape.SizeBDiagCursor))
-        elif handle in (HANDLE_T, HANDLE_B):
-            self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
-        elif handle in (HANDLE_L, HANDLE_R):
-            self.setCursor(QCursor(Qt.CursorShape.SizeHorCursor))
-        elif handle == HANDLE_MOVE:
-            self.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
-        else:
-            self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+        # Update visible cursor based on hover and trigger update
+        self._update_hover_cursor(pos)
+        self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         pos = event.position().toPoint()
+        self._snap_guide_x = None
+        self._snap_guide_y = None
 
         if self._mode == "panning":
             self._mode = "idle"
             self._pan_start_pos = None
-            self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self._update_hover_cursor(pos)
+            self.update()
             return
 
         if self._mode == "drawing" and self._drag_start_pos:
             if self._current_image_box:
                 ix1, iy1, ix2, iy2 = self._current_image_box
             else:
-                ix1, iy1 = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
+                ix1 = self._drag_start_image_x
+                iy1 = self._drag_start_image_y
                 ix2, iy2 = self.widget_to_image(pos.x(), pos.y())
 
             x = min(ix1, ix2)
@@ -504,7 +890,7 @@ class MangaCanvas(QWidget):
             self._drag_start_pos = None
             self._current_mouse_pos = None
             self._current_image_box = None
-            self._last_raw_mouse_pos = None
+            self._update_hover_cursor(pos)
             self.update()
             return
 
@@ -526,8 +912,8 @@ class MangaCanvas(QWidget):
             self._drag_start_pos = None
             self._panel_before_drag = None
             self._current_image_box = None
-            self._last_raw_mouse_pos = None
             self.panels_changed.emit()
+            self._update_hover_cursor(pos)
             self.update()
 
     # --- Rendering ---
@@ -540,7 +926,7 @@ class MangaCanvas(QWidget):
         # Background canvas fill
         painter.fillRect(self.rect(), QColor("#1e1e1e"))
 
-        # Center image if smaller than widget and offset not manually modified
+        # Dimensions
         img_w = self.native_w * self.zoom_factor
         img_h = self.native_h * self.zoom_factor
 
@@ -551,6 +937,22 @@ class MangaCanvas(QWidget):
             # Border around page
             painter.setPen(QPen(QColor("#444444"), 1))
             painter.drawRect(target_rect)
+
+        # Draw Magnetic Snap Guidelines
+        if self._mode in ("drawing", "resizing", "moving"):
+            if self._snap_guide_x is not None:
+                gx, _ = self.image_to_widget(self._snap_guide_x, 0)
+                painter.setPen(QPen(QColor(0, 229, 255, 175), 1.2, Qt.PenStyle.DashLine))
+                top_y = max(0.0, float(self.offset_y))
+                bot_y = min(float(self.rect().height()), float(self.offset_y + img_h))
+                painter.drawLine(QPointF(gx, top_y), QPointF(gx, bot_y))
+
+            if self._snap_guide_y is not None:
+                _, gy = self.image_to_widget(0, self._snap_guide_y)
+                painter.setPen(QPen(QColor(0, 229, 255, 175), 1.2, Qt.PenStyle.DashLine))
+                left_x = max(0.0, float(self.offset_x))
+                right_x = min(float(self.rect().width()), float(self.offset_x + img_w))
+                painter.drawLine(QPointF(left_x, gy), QPointF(right_x, gy))
 
         # Draw Panels
         font = QFont("SansSerif", 10, QFont.Weight.Bold)
@@ -619,5 +1021,54 @@ class MangaCanvas(QWidget):
             painter.fillRect(badge_rect, QColor("#76ff03"))
             painter.setPen(QColor("#000000"))
             painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, badge_text)
+
+        # Precision Loupe HUD (Large square with crisp pixel inspection)
+        if self.precision_mouse_enabled and self._mode in ("drawing", "resizing") and self._pixmap and not self._pixmap.isNull():
+            loupe_size = min(260, max(180, int(min(self.rect().width(), self.rect().height()) * 0.42)))
+            margin = 14
+            # Keep loupe away from cursor
+            if self._current_mouse_pos and self._current_mouse_pos.x() > self.rect().width() - (loupe_size + 40) and self._current_mouse_pos.y() < (loupe_size + 40):
+                lx = margin
+            else:
+                lx = self.rect().width() - loupe_size - margin
+            ly = margin
+
+            crop_size = 48
+            half = crop_size // 2
+            cx = max(0, min(self.native_w - crop_size, self._active_ix - half))
+            cy = max(0, min(self.native_h - crop_size, self._active_iy - half))
+
+            painter.save()
+            loupe_rect = QRectF(lx, ly, loupe_size, loupe_size)
+            painter.setPen(QPen(QColor("#00e5ff"), 2))
+            painter.setBrush(QBrush(QColor("#151515")))
+            painter.drawRoundedRect(loupe_rect, 8, 8)
+
+            inner_rect = loupe_rect.adjusted(2, 2, -2, -2)
+            painter.setClipRect(inner_rect)
+            src_rect = QRectF(cx, cy, crop_size, crop_size)
+            painter.drawPixmap(inner_rect, self._pixmap, src_rect)
+
+            # Center crosshair inside loupe
+            mid_x = lx + loupe_size / 2.0
+            mid_y = ly + loupe_size / 2.0
+            painter.setPen(QPen(QColor(0, 229, 255, 220), 1.2))
+            painter.drawLine(QPointF(mid_x - 18, mid_y), QPointF(mid_x + 18, mid_y))
+            painter.drawLine(QPointF(mid_x, mid_y - 18), QPointF(mid_x, mid_y + 18))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(QPointF(mid_x, mid_y), 4, 4)
+
+            painter.restore()
+            badge_h = 24
+            painter.fillRect(QRectF(lx, ly + loupe_size - badge_h, loupe_size, badge_h), QColor(0, 0, 0, 220))
+            painter.setPen(QColor("#00e5ff"))
+            font_small = QFont("SansSerif", 8, QFont.Weight.Bold)
+            painter.setFont(font_small)
+            mag_ratio = round(loupe_size / crop_size, 1)
+            painter.drawText(
+                QRectF(lx, ly + loupe_size - badge_h, loupe_size, badge_h),
+                Qt.AlignmentFlag.AlignCenter,
+                f"🎯 {mag_ratio}× ({self._active_ix}, {self._active_iy}) [Alt=free]"
+            )
 
         painter.end()
