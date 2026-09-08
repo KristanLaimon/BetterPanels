@@ -306,6 +306,48 @@ class TestAnnotator(unittest.TestCase):
         res = subprocess.run(["lua", "-e", lua_code], capture_output=True, text=True)
         self.assertEqual(res.returncode, 0, f"Lua failed: {res.stderr}")
 
+    def test_canvas_undo_redo(self):
+        canvas = MangaCanvas()
+        canvas.native_w = 800
+        canvas.native_h = 1200
+
+        self.assertEqual(len(canvas.panels), 0)
+
+        # 1. Add full page panel
+        canvas.add_full_page_panel()
+        self.assertEqual(len(canvas.panels), 1)
+
+        # 2. Add second panel
+        canvas.push_undo()
+        canvas.panels.append(Panel(10, 10, 100, 100))
+        self.assertEqual(len(canvas.panels), 2)
+
+        # 3. Undo second panel
+        canvas.undo()
+        self.assertEqual(len(canvas.panels), 1)
+
+        # 4. Undo first panel
+        canvas.undo()
+        self.assertEqual(len(canvas.panels), 0)
+
+        # 5. Redo first panel
+        canvas.redo()
+        self.assertEqual(len(canvas.panels), 1)
+
+        # 6. Redo second panel
+        canvas.redo()
+        self.assertEqual(len(canvas.panels), 2)
+
+    def test_canvas_precision_mode(self):
+        canvas = MangaCanvas()
+        self.assertTrue(canvas.precision_mouse_enabled)
+
+        canvas.set_precision_mode(False)
+        self.assertFalse(canvas.precision_mouse_enabled)
+
+        canvas.set_precision_mode(True)
+        self.assertTrue(canvas.precision_mouse_enabled)
+
 
 if __name__ == "__main__":
     unittest.main()

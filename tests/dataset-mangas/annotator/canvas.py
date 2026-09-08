@@ -38,6 +38,7 @@ class MangaCanvas(QWidget):
     panel_selected = pyqtSignal(int)  # index of selected panel, or -1
     status_message = pyqtSignal(str)
     cursor_position = pyqtSignal(int, int)  # (native_x, native_y)
+    precision_mode_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -55,6 +56,18 @@ class MangaCanvas(QWidget):
         self.offset_x = 0
         self.offset_y = 0
 
+        # Precision mouse fine-tuning
+        self.precision_mouse_enabled = True
+        self._accum_delta_x = 0.0
+        self._accum_delta_y = 0.0
+        self._last_raw_mouse_pos: Optional[QPoint] = None
+        self._current_image_box: Optional[Tuple[int, int, int, int]] = None
+
+        # Undo / Redo history stacks
+        self._undo_stack: List[List[Panel]] = []
+        self._redo_stack: List[List[Panel]] = []
+        self._panels_at_drag_start: List[Panel] = []
+
         # Interaction state
         self._mode = "idle"  # "idle", "drawing", "resizing", "moving", "panning"
         self._drag_start_pos: Optional[QPoint] = None
@@ -63,6 +76,44 @@ class MangaCanvas(QWidget):
         self._panel_before_drag: Optional[Panel] = None
         self._space_pressed = False
         self._pan_start_pos: Optional[QPoint] = None
+
+    def set_precision_mode(self, enabled: bool):
+        """Enable or disable slow mouse precision damping mode."""
+        self.precision_mouse_enabled = bool(enabled)
+        self.precision_mode_changed.emit(self.precision_mouse_enabled)
+        state_str = "ON" if self.precision_mouse_enabled else "OFF"
+        self.status_message.emit(f"Precision mouse mode: {state_str}")
+
+    def push_undo(self):
+        """Save current panels state to undo stack and clear redo stack."""
+        self._undo_stack.append([p.copy() for p in self.panels])
+        if len(self._undo_stack) > 50:
+            self._undo_stack.pop(0)
+        self._redo_stack.clear()
+
+    def undo(self):
+        """Revert to previous panels state."""
+        if not self._undo_stack:
+            return
+        self._redo_stack.append([p.copy() for p in self.panels])
+        self.panels = self._undo_stack.pop()
+        self.selected_panel_index = min(self.selected_panel_index, len(self.panels) - 1)
+        self.panels_changed.emit()
+        self.panel_selected.emit(self.selected_panel_index)
+        self.update()
+        self.status_message.emit("Undo performed.")
+
+    def redo(self):
+        """Reapply previously undone panels state."""
+        if not self._redo_stack:
+            return
+        self._undo_stack.append([p.copy() for p in self.panels])
+        self.panels = self._redo_stack.pop()
+        self.selected_panel_index = min(self.selected_panel_index, len(self.panels) - 1)
+        self.panels_changed.emit()
+        self.panel_selected.emit(self.selected_panel_index)
+        self.update()
+        self.status_message.emit("Redo performed.")
 
     def set_page(self, pixmap: Optional[QPixmap], panels: List[Panel]):
         """Update current page pixmap and panels."""
@@ -77,6 +128,8 @@ class MangaCanvas(QWidget):
         self.panels = [p.copy() for p in panels]
         self.selected_panel_index = -1
         self._mode = "idle"
+        self._undo_stack.clear()
+        self._redo_stack.clear()
         self.update()
 
     def set_zoom(self, zoom: float):
@@ -160,6 +213,7 @@ class MangaCanvas(QWidget):
         """Add a bounding box covering the entire page."""
         if self.native_w == 0 or self.native_h == 0:
             return
+        self.push_undo()
         panel = Panel(0, 0, self.native_w, self.native_h)
         self.panels.append(panel)
         self.selected_panel_index = len(self.panels) - 1
@@ -177,6 +231,7 @@ class MangaCanvas(QWidget):
     def delete_selected_panel(self):
         """Remove currently selected panel."""
         if 0 <= self.selected_panel_index < len(self.panels):
+            self.push_undo()
             self.panels.pop(self.selected_panel_index)
             self.selected_panel_index = min(self.selected_panel_index, len(self.panels) - 1)
             self.panels_changed.emit()
@@ -185,6 +240,9 @@ class MangaCanvas(QWidget):
 
     def clear_panels(self):
         """Clear all panels on this page."""
+        if not self.panels:
+            return
+        self.push_undo()
         self.panels.clear()
         self.selected_panel_index = -1
         self.panels_changed.emit()
@@ -194,6 +252,7 @@ class MangaCanvas(QWidget):
     def move_panel_up(self, idx: int):
         """Move panel earlier in reading order sequence."""
         if idx > 0 and idx < len(self.panels):
+            self.push_undo()
             self.panels[idx], self.panels[idx - 1] = self.panels[idx - 1], self.panels[idx]
             self.selected_panel_index = idx - 1
             self.panels_changed.emit()
@@ -203,6 +262,7 @@ class MangaCanvas(QWidget):
     def move_panel_down(self, idx: int):
         """Move panel later in reading order sequence."""
         if 0 <= idx < len(self.panels) - 1:
+            self.push_undo()
             self.panels[idx], self.panels[idx + 1] = self.panels[idx + 1], self.panels[idx]
             self.selected_panel_index = idx + 1
             self.panels_changed.emit()
@@ -212,16 +272,30 @@ class MangaCanvas(QWidget):
     # --- Mouse & Keyboard Event Handlers ---
 
     def keyPressEvent(self, event: QKeyEvent):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_Z:
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    self.redo()
+                else:
+                    self.undo()
+                return
+            elif event.key() == Qt.Key.Key_Y:
+                self.redo()
+                return
+
         if event.key() == Qt.Key.Key_Space:
             self._space_pressed = True
             self.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
         elif event.key() == Qt.Key.Key_F:
             self.add_full_page_panel()
+        elif event.key() == Qt.Key.Key_P:
+            self.set_precision_mode(not self.precision_mouse_enabled)
         elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             self.delete_selected_panel()
         elif event.key() == Qt.Key.Key_Escape:
             if self._mode != "idle":
                 self._mode = "idle"
+                self._current_image_box = None
                 self.update()
             else:
                 self.select_panel(-1)
@@ -259,6 +333,12 @@ class MangaCanvas(QWidget):
             return
 
         if event.button() == Qt.MouseButton.LeftButton:
+            self._panels_at_drag_start = [p.copy() for p in self.panels]
+            self._last_raw_mouse_pos = pos
+            self._accum_delta_x = 0.0
+            self._accum_delta_y = 0.0
+            self._current_image_box = None
+
             handle, panel_idx = self._hit_test(pos)
             if handle in (HANDLE_TL, HANDLE_T, HANDLE_TR, HANDLE_R, HANDLE_BR, HANDLE_B, HANDLE_BL, HANDLE_L):
                 self._mode = "resizing"
@@ -277,6 +357,8 @@ class MangaCanvas(QWidget):
                 self._mode = "drawing"
                 self._drag_start_pos = pos
                 self._current_mouse_pos = pos
+                start_ix, start_iy = self.widget_to_image(pos.x(), pos.y())
+                self._current_image_box = (start_ix, start_iy, start_ix, start_iy)
 
         elif event.button() == Qt.MouseButton.RightButton:
             # Right click deselects
@@ -299,17 +381,45 @@ class MangaCanvas(QWidget):
                 self.update()
             return
 
-        if self._mode == "drawing":
+        # Calculate precision mouse step with velocity damping
+        raw_step_x = 0.0
+        raw_step_y = 0.0
+        if self._last_raw_mouse_pos is not None:
+            raw_step_x = pos.x() - self._last_raw_mouse_pos.x()
+            raw_step_y = pos.y() - self._last_raw_mouse_pos.y()
+        self._last_raw_mouse_pos = pos
+
+        dist = (raw_step_x ** 2 + raw_step_y ** 2) ** 0.5
+        use_precision = self.precision_mouse_enabled or bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+
+        if use_precision and dist > 0:
+            # When moving slowly (dist < 8px), dampen speed by 4x for millimeter pixel precision
+            if dist < 6.0:
+                damping = 0.25
+            elif dist < 18.0:
+                damping = 0.25 + 0.75 * ((dist - 6.0) / 12.0)
+            else:
+                damping = 1.0
+        else:
+            damping = 1.0
+
+        self._accum_delta_x += raw_step_x * damping
+        self._accum_delta_y += raw_step_y * damping
+
+        # Image delta
+        dx = int(round(self._accum_delta_x / self.zoom_factor))
+        dy = int(round(self._accum_delta_y / self.zoom_factor))
+
+        if self._mode == "drawing" and self._drag_start_pos:
+            start_ix, start_iy = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
+            curr_ix = max(0, min(self.native_w, start_ix + dx))
+            curr_iy = max(0, min(self.native_h, start_iy + dy))
+            self._current_image_box = (start_ix, start_iy, curr_ix, curr_iy)
             self._current_mouse_pos = pos
             self.update()
             return
 
         if self._mode == "moving" and self._panel_before_drag and 0 <= self.selected_panel_index < len(self.panels):
-            start_ix, start_iy = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
-            curr_ix, curr_iy = self.widget_to_image(pos.x(), pos.y())
-            dx = curr_ix - start_ix
-            dy = curr_iy - start_iy
-
             orig = self._panel_before_drag
             nx = max(0, min(self.native_w - orig.w, orig.x + dx))
             ny = max(0, min(self.native_h - orig.h, orig.y + dy))
@@ -320,11 +430,6 @@ class MangaCanvas(QWidget):
             return
 
         if self._mode == "resizing" and self._panel_before_drag and 0 <= self.selected_panel_index < len(self.panels):
-            start_ix, start_iy = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
-            curr_ix, curr_iy = self.widget_to_image(pos.x(), pos.y())
-            dx = curr_ix - start_ix
-            dy = curr_iy - start_iy
-
             orig = self._panel_before_drag
             x, y, w, h = orig.x, orig.y, orig.w, orig.h
 
@@ -375,8 +480,11 @@ class MangaCanvas(QWidget):
             return
 
         if self._mode == "drawing" and self._drag_start_pos:
-            ix1, iy1 = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
-            ix2, iy2 = self.widget_to_image(pos.x(), pos.y())
+            if self._current_image_box:
+                ix1, iy1, ix2, iy2 = self._current_image_box
+            else:
+                ix1, iy1 = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
+                ix2, iy2 = self.widget_to_image(pos.x(), pos.y())
 
             x = min(ix1, ix2)
             y = min(iy1, iy2)
@@ -384,6 +492,8 @@ class MangaCanvas(QWidget):
             h = abs(iy2 - iy1)
 
             if w >= MIN_BOX_SIZE and h >= MIN_BOX_SIZE:
+                self._undo_stack.append([p.copy() for p in self._panels_at_drag_start])
+                self._redo_stack.clear()
                 new_panel = Panel(x, y, w, h)
                 self.panels.append(new_panel)
                 self.selected_panel_index = len(self.panels) - 1
@@ -393,13 +503,30 @@ class MangaCanvas(QWidget):
             self._mode = "idle"
             self._drag_start_pos = None
             self._current_mouse_pos = None
+            self._current_image_box = None
+            self._last_raw_mouse_pos = None
             self.update()
             return
 
         if self._mode in ("resizing", "moving"):
+            changed = False
+            if len(self.panels) == len(self._panels_at_drag_start):
+                for p_now, p_orig in zip(self.panels, self._panels_at_drag_start):
+                    if (p_now.x, p_now.y, p_now.w, p_now.h) != (p_orig.x, p_orig.y, p_orig.w, p_orig.h):
+                        changed = True
+                        break
+            else:
+                changed = True
+
+            if changed:
+                self._undo_stack.append([p.copy() for p in self._panels_at_drag_start])
+                self._redo_stack.clear()
+
             self._mode = "idle"
             self._drag_start_pos = None
             self._panel_before_drag = None
+            self._current_image_box = None
+            self._last_raw_mouse_pos = None
             self.panels_changed.emit()
             self.update()
 
@@ -468,10 +595,8 @@ class MangaCanvas(QWidget):
                     painter.drawRect(hr)
 
         # Draw rubber-band while currently drawing
-        if self._mode == "drawing" and self._drag_start_pos and self._current_mouse_pos:
-            ix1, iy1 = self.widget_to_image(self._drag_start_pos.x(), self._drag_start_pos.y())
-            ix2, iy2 = self.widget_to_image(self._current_mouse_pos.x(), self._current_mouse_pos.y())
-
+        if self._mode == "drawing" and self._current_image_box:
+            ix1, iy1, ix2, iy2 = self._current_image_box
             rx = min(ix1, ix2)
             ry = min(iy1, iy2)
             rw = abs(ix2 - ix1)

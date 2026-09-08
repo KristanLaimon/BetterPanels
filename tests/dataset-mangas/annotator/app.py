@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QFileDialog, QMessageBox,
     QListWidget, QListWidgetItem, QSpinBox, QSlider, QStatusBar,
     QSplitter, QGroupBox, QTabWidget, QScrollArea, QFrame,
-    QProgressBar, QProgressDialog, QInputDialog
+    QProgressBar, QProgressDialog, QInputDialog, QCheckBox
 )
 
 from .document_reader import DocumentReader
@@ -384,6 +384,30 @@ class AnnotatorMainWindow(QMainWindow):
         self.btn_full_page.clicked.connect(self.canvas.add_full_page_panel)
         p_layout.addWidget(self.btn_full_page)
 
+        # Undo / Redo controls
+        undo_layout = QHBoxLayout()
+        self.btn_undo = QPushButton("↶ Undo (Ctrl+Z)")
+        self.btn_undo.clicked.connect(self.canvas.undo)
+        undo_layout.addWidget(self.btn_undo)
+
+        self.btn_redo = QPushButton("↷ Redo (Ctrl+Y)")
+        self.btn_redo.clicked.connect(self.canvas.redo)
+        undo_layout.addWidget(self.btn_redo)
+        p_layout.addLayout(undo_layout)
+
+        # Precision mouse fine-tuning toggle
+        self.chk_precision = QCheckBox("🎯 Precision Fine-Tuning")
+        self.chk_precision.setChecked(True)
+        self.chk_precision.setToolTip(
+            "Reduces mouse velocity when moving slowly around corners for pixel-precise alignment.\n"
+            "Uncheck to restore default 1:1 speed. (Shortcut: P, or hold Shift)"
+        )
+        self.chk_precision.toggled.connect(self.canvas.set_precision_mode)
+        self.canvas.precision_mode_changed.connect(
+            lambda en: self.chk_precision.setChecked(en) if self.chk_precision.isChecked() != en else None
+        )
+        p_layout.addWidget(self.chk_precision)
+
         self.panel_list = QListWidget()
         self.panel_list.currentRowChanged.connect(self._on_list_row_selected)
         p_layout.addWidget(self.panel_list, 1)
@@ -436,6 +460,18 @@ class AnnotatorMainWindow(QMainWindow):
         file_menu.addAction(act_exit)
 
         edit_menu = menubar.addMenu("&Edit")
+        act_undo = QAction("&Undo", self)
+        act_undo.setShortcut(QKeySequence.StandardKey.Undo)
+        act_undo.triggered.connect(self.canvas.undo)
+        edit_menu.addAction(act_undo)
+
+        act_redo = QAction("&Redo", self)
+        act_redo.setShortcut(QKeySequence.StandardKey.Redo)
+        act_redo.triggered.connect(self.canvas.redo)
+        edit_menu.addAction(act_redo)
+
+        edit_menu.addSeparator()
+
         act_full = QAction("Add &Full Page Panel", self)
         act_full.setShortcut(QKeySequence(Qt.Key.Key_F))
         act_full.triggered.connect(self.canvas.add_full_page_panel)

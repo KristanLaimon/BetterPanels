@@ -110,18 +110,22 @@ When launched, the application presents the **📚 Recent Projects** tab:
 - **Full-Page Panels**: If the entire page is a single splash image or spread, press **`F`** (or click **Add Full Page Panel (F)**) to instantly create a box covering the entire page `(0, 0, width, height)`.
 - **Special Panels with Speech Bubbles**: You can draw boxes that encompass the artwork and speech bubbles without being constrained by grid lines.
 
-### 5. Adjust & Reorder Panels
+### 5. Adjust, Fine-Tune & Reorder Panels
+- **Undo / Redo**: Press **`Ctrl+Z`** to undo any panel placement, resize, or deletion. Press **`Ctrl+Y`** (or `Ctrl+Shift+Z`) to redo.
+- **🎯 Precision Mouse Fine-Tuning**: When working on tight margins or corner pixels, check **🎯 Precision Fine-Tuning** (or press **`P`**). Slow, deliberate mouse movements will automatically be dampened (up to 4× slower) so you can hit corners with single-pixel accuracy without changing your operating system DPI. You can also hold **`Shift`** at any time during drawing or resizing to temporarily engage precision damping.
 - **Resize**: Click any box to select it. Eight handles appear on the corners and edges; drag any handle to adjust down to the pixel.
 - **Move**: Click and drag inside a selected box to reposition it.
 - **Reorder**: If you drew panels out of order, select a panel in the sidebar list and click **▲ Move Up** or **▼ Move Down** to adjust its reading sequence.
 - **Delete**: Select a panel and press `Delete` (or `Backspace`), or click **Delete (Del)**.
 - **Clear**: Click **Clear Page** to remove all panels on the current page.
 
-### 6. Save the Dataset
+### 6. Save the Dataset & Mark Finished
 - Click **💾 Save Dataset (Ctrl+S)**.
 - The annotator will:
-  1. Export the annotated pages as crisp PNG images to `images/<book_title>/<page_index>.png`.
-  2. Write or update `annotation.json` in the target dataset folder.
+  1. Save individual pages (`00.png`, `01.png`, `02.png`...) and metadata inside `dataset/<bookfriendlyname>/`.
+  2. Maintain `metadata.json` with progress % and status.
+  3. Compile the master `annotation.json` compatible with PanelsPlus benchmarks.
+- Press **`Ctrl+M`** when you've finished annotating all panels in the book to mark it as **`[FINISHED]`**.
 
 ---
 
@@ -130,12 +134,17 @@ When launched, the application presents the **📚 Recent Projects** tab:
 | Action | Control / Shortcut | Description |
 |---|---|---|
 | **Draw Panel** | `Left Click + Drag` | Draw bounding box in reading order |
+| **Undo** | `Ctrl + Z` | Undo last panel draw, resize, move, or delete |
+| **Redo** | `Ctrl + Y` or `Ctrl + Shift + Z` | Redo previously undone action |
+| **🎯 Precision Fine-Tuning** | `P` or toggle checkbox | Dampens mouse speed on slow motions for pixel-perfect corner alignment |
+| **Temporary Precision** | Hold `Shift` while dragging | Dynamically enables precision speed damping |
 | **Full-Page Panel** | `F` | Create a panel covering the whole page |
 | **Select Panel** | `Left Click` | Select a panel to view handles and details |
-| **Deselect** | `Right Click` or `Escape` | Clear selection |
+| **Deselect** | `Right Click` or `Escape` | Clear selection or cancel active drag |
 | **Resize Box** | Drag border handles | 8 handles (corners and edges) |
 | **Move Box** | Drag inside selected box | Reposition the rectangle |
 | **Delete Panel** | `Delete` or `Backspace` | Remove selected panel |
+| **Mark Finished** | `Ctrl + M` | Toggle book status between `[IN PROGRESS]` and `[FINISHED]` |
 | **Next Page** | `D` or `Right Arrow` | Go to next page |
 | **Prev Page** | `A` or `Left Arrow` | Go to previous page |
 | **Zoom In / Out** | `Ctrl + Wheel` or `Ctrl +` / `Ctrl -` | Zoom centered on cursor |
@@ -143,22 +152,25 @@ When launched, the application presents the **📚 Recent Projects** tab:
 | **Fit Width** | `View -> Fit Width` | Scale page width to fit window |
 | **Zoom 100%** | `View -> Zoom 100%` | Reset to 1:1 pixel scale |
 | **Pan Canvas** | `Middle Click + Drag` or `Space + Left Drag` | Move around zoomed page |
-| **Save Dataset** | `Ctrl + S` | Export images and save `annotation.json` |
+| **Save Dataset** | `Ctrl + S` | Export pages and save `annotation.json` |
 
 ---
 
 ## Dataset Storage & Schema
 
-The output directory (default: `tests/dataset-mangas/dataset-private`) will contain:
+The output directory (default: `tests/dataset-mangas/dataset`) will contain:
 
 ```text
-dataset-private/
-├── annotation.json
-└── images/
-    └── <book_title>/
-        ├── 001.png
-        ├── 002.png
-        └── ...
+dataset/
+├── <bookfriendlyname>/
+│   ├── 00.png             # Cover / Page 1 (git-tracked)
+│   ├── 01.png             # Page 2         (git-tracked)
+│   ├── 02.png             # Page 3         (git-tracked)
+│   ├── 03.png             # Page 4+        (git-ignored for DMCA protection)
+│   ├── ...
+│   ├── metadata.json      # Book progress % & finished status
+│   └── annotation.json    # Book panel annotations
+└── annotation.json        # Compiled master dataset manifest
 ```
 
 ### `annotation.json` Schema
@@ -172,7 +184,7 @@ The output strictly matches PanelsPlus's `dataset_manifest.lua` format:
       {
         "page_index": 1,
         "image_paths": {
-          "ja": "images/my_manga/001.png"
+          "ja": "my_manga/00.png"
         },
         "frame": [
           { "x": 50, "y": 60, "w": 400, "h": 300 },
@@ -193,20 +205,20 @@ Coordinates (`x`, `y`, `w`, `h`) are saved in the native pixel resolution of the
 Once you have annotated pages, you can evaluate PanelsPlus's segmentation accuracy directly against your hand-crafted data using the benchmark tool:
 
 ```bash
-# Evaluate all pages in your private dataset
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private
+# Evaluate all pages in your private dataset (default location)
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset
 
 # Evaluate a specific book
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private --book my_manga
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --book my_manga
 
 # Inspect a specific page with full box coordinates & IoU breakdown
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private --book my_manga --page 1
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --book my_manga --page 1
 
 # Only report pages with detection discrepancies
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private --failures-only
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --failures-only
 
 # Strict IoU threshold (default is 0.50)
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset-private --threshold 0.75
+lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --threshold 0.75
 ```
 
 ---

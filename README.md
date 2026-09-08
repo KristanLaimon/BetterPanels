@@ -262,15 +262,5 @@ I don't see any more options to include, but contributions are welcome for:
 
 Thanks for using the plugin or at least, taking a look into this repo.
 
-## Credits
-
-### Dataset used for testing (https://github.com/mantra-inc/open-mantra-dataset.git)
-    @article{hinami_aaai_2021,
-        author={Ryota Hinami and Shonosuke Ishiwatari and Kazuhiko Yasuda and Yusuke Matsui},
-        title={Towards Fully Automated Manga Translation},
-        booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
-        year={2021}
-    }
-
 ## 📜 License
 MIT License, check "LICENSE" file in this repository.
