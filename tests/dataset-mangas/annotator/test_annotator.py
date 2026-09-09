@@ -691,7 +691,59 @@ class TestAnnotator(unittest.TestCase):
         self.assertEqual(canvas._mode, "idle")
         self.assertEqual((canvas.panels[0].w, canvas.panels[0].h), (120, 130))
 
+    def test_default_image_paths_en(self):
+        pa = PageAnnotation(page_index=1, image_rel_path="my_book/00.png")
+        d = pa.to_dict()
+        self.assertIn("image_paths", d)
+        self.assertIn("en", d["image_paths"])
+        self.assertNotIn("ja", d["image_paths"])
+        self.assertEqual(d["image_paths"]["en"], "my_book/00.png")
+
+        # Backwards compatibility when reading older ja dictionaries
+        legacy_d = {
+            "page_index": 2,
+            "image_paths": {"ja": "legacy_book/01.png"},
+            "frame": [{"x": 10, "y": 20, "w": 100, "h": 200}]
+        }
+        loaded_pa = PageAnnotation.from_dict(legacy_d)
+        self.assertEqual(loaded_pa.image_rel_path, "legacy_book/01.png")
+        self.assertEqual(len(loaded_pa.frames), 1)
+
+    def test_bloom_into_you_dataset_100_percent_coverage(self):
+        real_ds_dir = "tests/dataset-mangas/dataset"
+        mgr = DatasetManager(real_ds_dir)
+        self.assertIn("Bloom_Into_You_Vol_8", mgr.books)
+
+        book_pages = mgr.books["Bloom_Into_You_Vol_8"]
+        self.assertEqual(len(book_pages), 213, "Expected exactly 213 pages for Bloom Into You")
+
+        meta = mgr.load_book_metadata("Bloom_Into_You_Vol_8")
+        self.assertEqual(meta.get("total_pages"), 213)
+        self.assertTrue(meta.get("finished"))
+
+        total_panels = 0
+        for page_idx in range(1, 214):
+            self.assertIn(page_idx, book_pages, f"Page index {page_idx} missing from dataset")
+            pa = book_pages[page_idx]
+            self.assertGreaterEqual(len(pa.frames), 1, f"Page {page_idx} must have >= 1 panel")
+            total_panels += len(pa.frames)
+
+            # Check image path exists on disk
+            img_path = os.path.join(real_ds_dir, pa.image_rel_path)
+            self.assertTrue(os.path.exists(img_path), f"Missing image file: {img_path}")
+
+            for f in pa.frames:
+                self.assertGreaterEqual(f.x, 0)
+                self.assertGreaterEqual(f.y, 0)
+                self.assertGreater(f.w, 0)
+                self.assertGreater(f.h, 0)
+                self.assertLessEqual(f.x + f.w, 1264)
+                self.assertLessEqual(f.y + f.h, 1680)
+
+        self.assertEqual(total_panels, 726, "Expected exactly 726 human-mapped panels")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

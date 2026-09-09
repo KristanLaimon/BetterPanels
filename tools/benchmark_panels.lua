@@ -19,7 +19,6 @@ local Manifest = require("tests.dataset-mangas.dataset_manifest")
 local Loader = require("tests.dataset-mangas.dataset_loader")
 local Evaluator = require("tests.dataset-mangas.panel_evaluator")
 local Segmenter = require("src._segmenter")
-local Geometry = require("src._geometry")
 
 -- Parse CLI arguments
 local target_book = nil
@@ -102,9 +101,8 @@ local failure_count = 0
 for _, page in ipairs(pages) do
     if page.frames and #page.frames > 0 then
         local map = Loader.loadPageMap(page.image_path)
-        local raw_panels = Segmenter.segment(map, { mode = page.reading_order })
-        local detected = Geometry.sortReadingOrder(raw_panels, page.reading_order)
-        local result = Evaluator.evaluate(page.frames, detected, iou_threshold)
+        local detected = Segmenter.detectPage(map, { mode = page.reading_order })
+        local result = Evaluator.evaluate(page.frames, detected, iou_threshold, 35)
 
         total_gt = total_gt + result.ground_truth_count
         total_det = total_det + result.detected_count

@@ -36,6 +36,24 @@ local spec_modules = {
     "tests.spec.dataset_benchmark_spec",
 }
 
+-- Dynamically discover and run per-manga specs in tests/dataset-mangas/dataset/<manganame>/*_spec.lua
+local dataset_dir = repo_root .. "tests/dataset-mangas/dataset"
+local dataset_pipe = io.popen(string.format('ls "%s"/*/*_spec.lua 2>/dev/null', dataset_dir), "r")
+if dataset_pipe then
+    for line in dataset_pipe:lines() do
+        local path = line:match("^%s*(.-)%s*$")
+        if path and #path > 0 then
+            local rel = path
+            if rel:sub(1, #repo_root) == repo_root then
+                rel = rel:sub(#repo_root + 1)
+            end
+            local mod = rel:gsub("%.lua$", ""):gsub("[/\\]", ".")
+            table.insert(spec_modules, mod)
+        end
+    end
+    dataset_pipe:close()
+end
+
 for _, mod in ipairs(spec_modules) do
     print("\n== " .. mod .. " ==")
     require(mod)

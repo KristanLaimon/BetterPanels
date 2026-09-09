@@ -81,6 +81,28 @@ local function estimateBackground(raw, w, h)
     return 255
 end
 
+--- Read PNG width and height directly from the 24-byte IHDR header in pure Lua.
+local function readPngDimensions(image_path)
+    local f = io.open(image_path, "rb")
+    if not f then
+        return nil, nil
+    end
+    local header = f:read(24)
+    f:close()
+    if not header or #header < 24 then
+        return nil, nil
+    end
+    if header:sub(1, 8) ~= "\137PNG\r\n\026\n" then
+        return nil, nil
+    end
+    local w = header:byte(17) * 16777216 + header:byte(18) * 65536 + header:byte(19) * 256 + header:byte(20)
+    local h = header:byte(21) * 16777216 + header:byte(22) * 65536 + header:byte(23) * 256 + header:byte(24)
+    if w > 0 and h > 0 then
+        return w, h
+    end
+    return nil, nil
+end
+
 --- Load an image file into a PPPageMap.
 ---
 --- @param image_path string Absolute or repo-relative image path
@@ -89,28 +111,35 @@ end
 function DatasetLoader.loadPageMap(image_path, settings)
     settings = settings or {}
     local defaults = Settings.defaults
+    local target_w = settings.segment_target_width or defaults.segment_target_width or 480
+    local cache_key = string.format("%s:%d:%s", image_path, target_w, tostring(settings.segment_ink_delta))
+    if DatasetLoader._cache[cache_key] then
+        return DatasetLoader._cache[cache_key]
+    end
 
     local magick = DatasetLoader.getMagickCommand()
     if not magick then
         error("ImageMagick ('magick' or 'convert') is required to load test images.")
     end
 
-    -- 1. Read native dimensions
-    local dim_pipe = io.popen(string.format('%s "%s" -format "%%w %%h" info: 2>/dev/null', magick, image_path), "r")
-    if not dim_pipe then
-        error("Failed to read image dimensions for: " .. image_path)
-    end
-    local dim_str = dim_pipe:read("*a")
-    dim_pipe:close()
+    -- 1. Read native dimensions (pure Lua fast path for PNG, magick fallback for others)
+    local native_w, native_h = readPngDimensions(image_path)
+    if not native_w or not native_h then
+        local dim_pipe = io.popen(string.format('%s "%s" -format "%%w %%h" info: 2>/dev/null', magick, image_path), "r")
+        if not dim_pipe then
+            error("Failed to read image dimensions for: " .. image_path)
+        end
+        local dim_str = dim_pipe:read("*a")
+        dim_pipe:close()
 
-    local native_w, native_h = dim_str:match("(%d+)%s+(%d+)")
-    native_w, native_h = tonumber(native_w), tonumber(native_h)
+        native_w, native_h = dim_str:match("(%d+)%s+(%d+)")
+        native_w, native_h = tonumber(native_w), tonumber(native_h)
+    end
     if not native_w or not native_h or native_w == 0 or native_h == 0 then
-        error(string.format("Invalid dimensions (%s) for image %s", tostring(dim_str), image_path))
+        error(string.format("Invalid dimensions for image %s", image_path))
     end
 
     -- 2. Determine downscaled target dimensions
-    local target_w = settings.segment_target_width or defaults.segment_target_width or 480
     local target_h = math.max(1, math.floor(target_w * native_h / native_w))
 
     -- 3. Stream downscaled greyscale bytes
@@ -149,7 +178,7 @@ function DatasetLoader.loadPageMap(image_path, settings)
         end
     end
 
-    return {
+    local map = {
         w = target_w,
         h = target_h,
         data = ink_data,
@@ -162,6 +191,8 @@ function DatasetLoader.loadPageMap(image_path, settings)
         inverted = inverted,
         border = nil,
     }
+    DatasetLoader._cache[cache_key] = map
+    return map
 end
 
 return DatasetLoader

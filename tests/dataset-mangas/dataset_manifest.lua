@@ -11,51 +11,59 @@ local Manifest = {
 local DEFAULT_MANGA_DIR = "tests/dataset-mangas/dataset"
 local FALLBACK_MANGA_DIR = "tests/dataset-mangas/dataset-private"
 
---- Load and cache manga dataset.
----
---- @param dataset_dir string|nil Path to dataset directory (defaults to "tests/dataset-mangas/dataset")
---- @return table List of books with pages and annotations
-function Manifest.loadManga(dataset_dir)
-    if not dataset_dir then
-        local f_test = io.open(DEFAULT_MANGA_DIR .. "/annotation.json", "r")
-        if f_test then
-            f_test:close()
-            dataset_dir = DEFAULT_MANGA_DIR
-        else
-            dataset_dir = FALLBACK_MANGA_DIR
-        end
+--- Resolve image path checking dataset root, book folder, and basename fallback.
+local function resolveImagePath(dataset_dir, book_dir, rel_img)
+    if not rel_img then
+        return nil
     end
-
-    if Manifest._manga_cache and Manifest._manga_cache[dataset_dir] then
-        return Manifest._manga_cache[dataset_dir]
+    -- 1. Try dataset_dir .. "/" .. rel_img
+    local p1 = dataset_dir .. "/" .. rel_img
+    local f1 = io.open(p1, "r")
+    if f1 then
+        f1:close()
+        return p1
     end
-
-    local annotation_path = dataset_dir .. "/annotation.json"
-    local f, err = io.open(annotation_path, "r")
-    if not f then
-        Manifest._manga_cache = Manifest._manga_cache or {}
-        Manifest._manga_cache[dataset_dir] = {}
-        return {}
+    -- 2. Try book_dir .. "/" .. rel_img
+    local p2 = book_dir .. "/" .. rel_img
+    local f2 = io.open(p2, "r")
+    if f2 then
+        f2:close()
+        return p2
     end
-    local raw_json = f:read("*a")
-    f:close()
-
-    local raw_books = JSON.decode(raw_json)
-    if not raw_books then
-        Manifest._manga_cache = Manifest._manga_cache or {}
-        Manifest._manga_cache[dataset_dir] = {}
-        return {}
+    -- 3. Try book_dir .. "/" .. filename
+    local fname = rel_img:match("[^/\\]+$") or rel_img
+    local p3 = book_dir .. "/" .. fname
+    local f3 = io.open(p3, "r")
+    if f3 then
+        f3:close()
+        return p3
     end
+    return p1
+end
 
+--- Parse decoded books JSON structure into normalized book and page tables.
+local function parseBooksFromRaw(raw_books, dataset_dir, book_dir)
     local books = {}
     for _, raw_book in ipairs(raw_books) do
         local book = {
             book_title = raw_book.book_title,
             pages = {},
         }
+        local effective_book_dir = book_dir or (dataset_dir .. "/" .. (raw_book.book_title or ""))
         for _, raw_page in ipairs(raw_book.pages or {}) do
-            local rel_img = raw_page.image_paths and raw_page.image_paths.ja
-            local img_path = rel_img and (dataset_dir .. "/" .. rel_img) or nil
+            local rel_img = nil
+            if raw_page.image_paths and type(raw_page.image_paths) == "table" then
+                rel_img = raw_page.image_paths.en or raw_page.image_paths.ja
+                if not rel_img then
+                    for _, path in pairs(raw_page.image_paths) do
+                        if type(path) == "string" then
+                            rel_img = path
+                            break
+                        end
+                    end
+                end
+            end
+            local img_path = resolveImagePath(dataset_dir, effective_book_dir, rel_img)
             local frames = {}
             for _, rf in ipairs(raw_page.frame or {}) do
                 table.insert(frames, {
@@ -78,8 +86,105 @@ function Manifest.loadManga(dataset_dir)
         end
         table.insert(books, book)
     end
+    return books
+end
+
+--- Load and cache manga dataset.
+---
+--- Supports both per-book `dataset/<manganame>/annotation.json` and optional root `dataset/annotation.json`.
+---
+--- @param dataset_dir string|nil Path to dataset directory (defaults to "tests/dataset-mangas/dataset")
+--- @return table List of books with pages and annotations
+function Manifest.loadManga(dataset_dir)
+    if not dataset_dir then
+        -- Check if DEFAULT_MANGA_DIR exists or contains books
+        local test_pipe = io.popen(string.format('ls -d "%s"/*/annotation.json 2>/dev/null', DEFAULT_MANGA_DIR), "r")
+        local has_books = false
+        if test_pipe then
+            local line = test_pipe:read("*l")
+            test_pipe:close()
+            has_books = (line ~= nil and #line > 0)
+        end
+        if not has_books then
+            local f_test = io.open(DEFAULT_MANGA_DIR .. "/annotation.json", "r")
+            if f_test then
+                f_test:close()
+                has_books = true
+            end
+        end
+
+        if has_books then
+            dataset_dir = DEFAULT_MANGA_DIR
+        else
+            dataset_dir = FALLBACK_MANGA_DIR
+        end
+    end
+
+    if Manifest._manga_cache and Manifest._manga_cache[dataset_dir] then
+        return Manifest._manga_cache[dataset_dir]
+    end
+
+    local ann_files = {}
+
+    -- 1. Scan for individual book annotations: dataset/<manganame>/annotation.json
+    local pipe = io.popen(string.format('ls -d "%s"/*/annotation.json 2>/dev/null', dataset_dir), "r")
+    if pipe then
+        for line in pipe:lines() do
+            local trimmed = line:match("^%s*(.-)%s*$")
+            if trimmed and #trimmed > 0 then
+                table.insert(ann_files, trimmed)
+            end
+        end
+        pipe:close()
+    end
+
+    -- 2. Also check if dataset_dir directly contains annotation.json (direct book dir or master)
+    local direct_path = dataset_dir .. "/annotation.json"
+    local direct_file = io.open(direct_path, "r")
+    if direct_file then
+        direct_file:close()
+        local found = false
+        for _, af in ipairs(ann_files) do
+            if af == direct_path then
+                found = true
+                break
+            end
+        end
+        if not found then
+            table.insert(ann_files, direct_path)
+        end
+    end
 
     Manifest._manga_cache = Manifest._manga_cache or {}
+
+    if #ann_files == 0 then
+        Manifest._manga_cache[dataset_dir] = {}
+        return {}
+    end
+
+    local books = {}
+    local seen_titles = {}
+
+    for _, ann_path in ipairs(ann_files) do
+        local f = io.open(ann_path, "r")
+        if f then
+            local raw_json = f:read("*a")
+            f:close()
+
+            local raw_books = JSON.decode(raw_json)
+            if raw_books and type(raw_books) == "table" then
+                local book_dir = ann_path:match("^(.*)[/\\][^/\\]+$")
+                local parsed_books = parseBooksFromRaw(raw_books, dataset_dir, book_dir)
+                for _, b in ipairs(parsed_books) do
+                    if not seen_titles[b.book_title] then
+                        seen_titles[b.book_title] = true
+                        table.insert(books, b)
+                    end
+                end
+            end
+        end
+    end
+
     Manifest._manga_cache[dataset_dir] = books
     return books
 end
@@ -127,6 +232,8 @@ end
 --- @return table Array of representative page records
 function Manifest.getGoldenPages(dataset_dir)
     local golden_specs = {
+        { book = "Bloom_Into_You_Vol_8", page = 1 },
+        { book = "Bloom_Into_You_Vol_8", page = 8 },
         { book = "tojime_no_siora", page = 2 },
         { book = "balloon_dream", page = 4 },
         { book = "tencho_isoro", page = 2 },

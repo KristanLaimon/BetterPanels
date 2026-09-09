@@ -176,8 +176,7 @@ dataset/
 │   ├── 03.png             # Page 4+        (git-ignored for DMCA protection)
 │   ├── ...
 │   ├── metadata.json      # Book progress % & finished status
-│   └── annotation.json    # Book panel annotations
-└── annotation.json        # Compiled master dataset manifest
+│   └── annotation.json    # Book panel annotations (automatically scanned by PanelsPlus)
 ```
 
 ### `annotation.json` Schema
@@ -191,7 +190,7 @@ The output strictly matches PanelsPlus's `dataset_manifest.lua` format:
       {
         "page_index": 1,
         "image_paths": {
-          "ja": "my_manga/00.png"
+          "en": "my_manga/00.png"
         },
         "frame": [
           { "x": 50, "y": 60, "w": 400, "h": 300 },

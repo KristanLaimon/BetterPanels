@@ -1,3 +1,4 @@
+local Geometry = require("src._geometry")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
 local ffi = require("ffi")
@@ -167,8 +168,8 @@ end
 --- @return integer length Width of the widest gutter, 0 when there is none.
 local function findWidestGutter(projection, from, to, span, ink_ratio, min_length, avg_ink, is_column)
     local max_ink = span * ink_ratio
-    local valley_cap = is_column and 0.05 or 0.11
-    local valley_ratio = is_column and 0.15 or 0.28
+    local valley_cap = is_column and 0.03 or 0.05
+    local valley_ratio = is_column and 0.10 or 0.15
     if avg_ink and avg_ink > 0 then
         local valley_max = math.min(span * valley_cap, avg_ink * valley_ratio)
         if valley_max > max_ink then
@@ -176,6 +177,7 @@ local function findWidestGutter(projection, from, to, span, ink_ratio, min_lengt
         end
     end
     local best_start, best_stop, best_length = nil, nil, 0
+    local best_score = 0
     local run_start = nil
 
     for index = from, to do
@@ -188,19 +190,20 @@ local function findWidestGutter(projection, from, to, span, ink_ratio, min_lengt
                 local length = index - run_start
                 -- Noisy gutters (with screentones) should not exceed realistic gutter width (30 cells).
                 -- Truly clean gutters (near-zero ink) can span any width (e.g. wide margins).
-                local is_clean = projection[run_start] <= span * 0.02
+                local is_clean = projection[run_start] <= span * 0.015
                 local max_allowed_len = is_clean and math.huge or 30
                 -- A one-cell cut is only safe when it is truly blank. The
                 -- usual proportional tolerance is useful for multi-cell
                 -- gutters (which can pick up a halftone speck), but would let
                 -- a one-cell artwork gap split a Comic panel in two.
+                local score = length + (is_clean and 100 or 0)
                 if
                     length >= min_length
                     and length <= max_allowed_len
                     and (length > 1 or projection[run_start] == 0)
-                    and length > best_length
+                    and score > best_score
                 then
-                    best_start, best_stop, best_length = run_start, index - 1, length
+                    best_start, best_stop, best_length, best_score = run_start, index - 1, length, score
                 end
             end
             run_start = nil
@@ -676,11 +679,8 @@ function Segmenter.segment(map, settings)
     -- generic ratio still controls Manga; Comic mode intentionally accepts the
     -- smallest possible complete background seam.
     local min_dimension = math.min(map.w, map.h)
-    local default_ink_ratio = settings.mode == "manga" and 0.08 or defaults.segment_gutter_ink_ratio
+    local default_ink_ratio = settings.mode == "manga" and 0.04 or defaults.segment_gutter_ink_ratio
     local ink_ratio = settings.segment_gutter_ink_ratio or default_ink_ratio
-    if settings.mode == "manga" and settings.segment_gutter_ink_ratio == defaults.segment_gutter_ink_ratio then
-        ink_ratio = 0.08
-    end
 
     local ctx = {
         rows = ffi.new("int32_t[?]", map.h),
@@ -707,7 +707,7 @@ function Segmenter.segment(map, settings)
             2,
             math.floor(min_dimension * (settings.segment_border_width_ratio or defaults.segment_border_width_ratio))
         ),
-        slopes = settings.segment_shear ~= false and Segmenter.SHEAR_SLOPES or nil,
+        slopes = (settings.segment_shear == true) and Segmenter.SHEAR_SLOPES or nil,
         shear_max_depth = settings.segment_shear_max_depth or defaults.segment_shear_max_depth,
         shear_trigger = settings.segment_shear_trigger or defaults.segment_shear_trigger,
         shear_step = settings.segment_shear_step or defaults.segment_shear_step,
@@ -812,6 +812,36 @@ function Segmenter.accept(panels, map, settings)
     end
 
     return true
+end
+
+--- Detect panels for a page map, applying acceptance validation and fallback.
+---
+--- If `Segmenter.accept` rejects the segmentation (e.g. splash page, title page,
+--- or single partial panel), safely falls back to a full-page panel.
+---
+--- @param map PPPageMap Page ink map.
+--- @param settings PPSettings|table Plugin settings.
+--- @return PPPanel[] panels Ordered panel rectangles in native page coordinates.
+--- @return boolean accepted True if segmented panels were accepted, false if fallen back.
+--- @return string|nil reason Rejection reason if not accepted.
+function Segmenter.detectPage(map, settings)
+    settings = settings or Settings.defaults
+    local raw_panels = Segmenter.segment(map, settings)
+    local accepted, reason = Segmenter.accept(raw_panels, map, settings)
+    if not accepted then
+        return {
+            {
+                x = 0,
+                y = 0,
+                w = map.native_w,
+                h = map.native_h,
+            },
+        },
+            false,
+            reason
+    end
+    local mode = (settings and settings.mode) or "manga"
+    return Geometry.sortReadingOrder(raw_panels, mode), true, nil
 end
 
 return Segmenter

@@ -30,23 +30,49 @@ function PanelEvaluator.boxIoU(a, b)
     return inter_area / union_area
 end
 
+--- Check whether box `b` matches box `a` within an IoU threshold or a coordinate gap tolerance.
+---
+--- @param a table {x:number, y:number, w:number, h:number}
+--- @param b table {x:number, y:number, w:number, h:number}
+--- @param iou_threshold number|nil Threshold for a true positive match (defaults to 0.5)
+--- @param gap_tolerance number|nil Coordinate gap tolerance in pixels (e.g. 35)
+--- @return boolean matches True if matched
+--- @return number iou IoU between boxes
+function PanelEvaluator.boxMatch(a, b, iou_threshold, gap_tolerance)
+    local iou = PanelEvaluator.boxIoU(a, b)
+    if iou >= (iou_threshold or 0.5) then
+        return true, iou
+    end
+    if gap_tolerance and gap_tolerance > 0 then
+        local dx1 = math.abs((a.x or 0) - (b.x or 0))
+        local dy1 = math.abs((a.y or 0) - (b.y or 0))
+        local dx2 = math.abs(((a.x or 0) + (a.w or 0)) - ((b.x or 0) + (b.w or 0)))
+        local dy2 = math.abs(((a.y or 0) + (a.h or 0)) - ((b.y or 0) + (b.h or 0)))
+        if dx1 <= gap_tolerance and dy1 <= gap_tolerance and dx2 <= gap_tolerance and dy2 <= gap_tolerance then
+            return true, math.max(iou, iou_threshold or 0.5)
+        end
+    end
+    return false, iou
+end
+
 --- Evaluate detected panels against ground-truth panels.
 ---
 --- @param ground_truth table Array of {x, y, w, h} in annotated reading order
 --- @param detected table Array of {x, y, w, h} in detected reading order
 --- @param iou_threshold number|nil Threshold for a true positive match (defaults to 0.5)
+--- @param gap_tolerance number|nil Coordinate difference tolerance in pixels (e.g. 35)
 --- @return table Detailed evaluation metrics
-function PanelEvaluator.evaluate(ground_truth, detected, iou_threshold)
+function PanelEvaluator.evaluate(ground_truth, detected, iou_threshold, gap_tolerance)
     iou_threshold = iou_threshold or 0.5
     local n_gt = #ground_truth
     local n_det = #detected
 
-    -- Build IoU matrix
+    -- Build match matrix
     local pairs = {}
     for g_idx, g_box in ipairs(ground_truth) do
         for d_idx, d_box in ipairs(detected) do
-            local iou = PanelEvaluator.boxIoU(g_box, d_box)
-            if iou >= iou_threshold then
+            local matched, iou = PanelEvaluator.boxMatch(g_box, d_box, iou_threshold, gap_tolerance)
+            if matched then
                 table.insert(pairs, {
                     g_idx = g_idx,
                     d_idx = d_idx,

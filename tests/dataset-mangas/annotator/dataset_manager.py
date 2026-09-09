@@ -60,7 +60,7 @@ class PageAnnotation:
         }
         if self.image_rel_path:
             d["image_paths"] = {
-                "ja": self.image_rel_path
+                "en": self.image_rel_path
             }
         return d
 
@@ -68,7 +68,7 @@ class PageAnnotation:
     def from_dict(cls, d: dict) -> "PageAnnotation":
         rel_img = None
         if "image_paths" in d and isinstance(d["image_paths"], dict):
-            rel_img = d["image_paths"].get("ja") or next(iter(d["image_paths"].values()), None)
+            rel_img = d["image_paths"].get("en") or d["image_paths"].get("ja") or next(iter(d["image_paths"].values()), None)
         pa = cls(page_index=d["page_index"], image_rel_path=rel_img)
         for f in d.get("frame", []):
             pa.frames.append(Panel.from_dict(f))
@@ -272,9 +272,10 @@ class DatasetManager:
             pa = pages_dict[p_idx]
             if pa.frames or pa.image_rel_path:
                 d = pa.to_dict()
-                if "image_paths" in d and "ja" in d["image_paths"]:
-                    fname = os.path.basename(d["image_paths"]["ja"])
-                    d["image_paths"]["ja"] = f"{book_title}/{fname}"
+                if "image_paths" in d and isinstance(d["image_paths"], dict):
+                    for lang in list(d["image_paths"].keys()):
+                        fname = os.path.basename(d["image_paths"][lang])
+                        d["image_paths"][lang] = f"{book_title}/{fname}"
                 pages_list.append(d)
 
         book_json = [{
@@ -285,8 +286,9 @@ class DatasetManager:
         with open(book_json_path, "w", encoding="utf-8") as f:
             json.dump(book_json, f, indent=2, ensure_ascii=False)
 
-        # 2. Update master dataset/annotation.json
-        self.save_master_dataset()
+        # 2. Update master dataset/annotation.json if it exists
+        if os.path.exists(self.master_annotation_file):
+            self.save_master_dataset()
         return book_json_path
 
     def save_master_dataset(self) -> str:
@@ -299,9 +301,10 @@ class DatasetManager:
                 pa = pages_dict[p_idx]
                 if pa.frames or pa.image_rel_path:
                     d = pa.to_dict()
-                    if "image_paths" in d and "ja" in d["image_paths"]:
-                        fname = os.path.basename(d["image_paths"]["ja"])
-                        d["image_paths"]["ja"] = f"{book_title}/{fname}"
+                    if "image_paths" in d and isinstance(d["image_paths"], dict):
+                        for lang in list(d["image_paths"].keys()):
+                            fname = os.path.basename(d["image_paths"][lang])
+                            d["image_paths"][lang] = f"{book_title}/{fname}"
                     pages_list.append(d)
 
             if pages_list:
