@@ -538,6 +538,121 @@ local function emitLeaf(x0, y0, x1, y1, ink, ctx, out)
     table.insert(out, { x = x0, y = y0, w = w, h = h })
 end
 
+--- Measure the longest contiguous vertical run of ink cells in a column.
+---
+--- @param map PPPageMap Page ink map.
+--- @param x integer Column index.
+--- @param y0 integer Inclusive top row.
+--- @param y1 integer Inclusive bottom row.
+--- @return integer max_run Length of the longest continuous ink stroke.
+local function maxContinuousRun(map, x, y0, y1)
+    local max_run, cur_run = 0, 0
+    local data = map.data
+    local map_w = map.w
+    for y = y0, y1 do
+        if data[y * map_w + x] == 1 then
+            cur_run = cur_run + 1
+            if cur_run > max_run then
+                max_run = cur_run
+            end
+        else
+            cur_run = 0
+        end
+    end
+    return max_run
+end
+
+--- Find a vertical dividing gutter between side-by-side panels in 4-koma manga tiers.
+---
+--- In 4-koma manga, side-by-side vertical panel strips share a very narrow gutter
+--- (often only 2-3 native pixels wide) flanked by dark border strokes. Downsampled
+--- to 480px, the seam carries 15-30% ink, exceeding the standard column valley cap
+--- (3%), which causes findWidestGutter to merge the two panels into a single wide tier.
+---
+--- When standard gutters fail and the region spans the page width with a double-panel
+--- aspect ratio (>= 1.25), this searches the central corridor (35% to 65% of page width)
+--- for an ink valley flanked by dense continuous vertical border lines. Both resulting
+--- child panels must have valid 4-koma aspect ratios (<= 1.55).
+---
+--- @param map PPPageMap Page ink map.
+--- @param left integer Inclusive left column.
+--- @param top integer Inclusive top row.
+--- @param right integer Inclusive right column.
+--- @param bottom integer Inclusive bottom row.
+--- @param cols ffi.cdata* Column ink projection.
+--- @return integer|nil split_x Split column index, or nil if no 4-koma seam is found.
+local function find4KomaCenterlineSplit(map, left, top, right, bottom, cols)
+    local width = right - left + 1
+    local height = bottom - top + 1
+
+    -- Region must be wide enough, span across the page, and have a wide aspect ratio
+    if width < map.w * 0.65 or (width / height) < 1.25 then
+        return nil
+    end
+    if left > map.w * 0.18 or right < map.w * 0.82 then
+        return nil
+    end
+
+    -- Corridor in center of page (35% to 65% of page width)
+    local min_x = math.max(left + 15, math.floor(map.w * 0.35))
+    local max_x = math.min(right - 15, math.ceil(map.w * 0.65))
+    if min_x > max_x then
+        return nil
+    end
+
+    local best_split = nil
+    local best_score = -1
+
+    for x = min_x, max_x do
+        local val_r = cols[x] / height
+        if val_r <= 0.35 then
+            local left_w = x - left + 1
+            local right_w = right - x + 1
+            local left_aspect = left_w / height
+            local right_aspect = right_w / height
+
+            -- Both children must have plausible 4-koma panel aspect ratios
+            if left_aspect <= 1.55 and right_aspect <= 1.55 then
+                local left_run = 0
+                for dx = 1, 6 do
+                    local bx = x - dx
+                    if bx >= left and (cols[bx] / height) >= 0.45 then
+                        local run = maxContinuousRun(map, bx, top, bottom) / height
+                        if run > left_run then
+                            left_run = run
+                        end
+                    end
+                end
+
+                local right_run = 0
+                for dx = 1, 6 do
+                    local bx = x + dx
+                    if bx <= right and (cols[bx] / height) >= 0.45 then
+                        local run = maxContinuousRun(map, bx, top, bottom) / height
+                        if run > right_run then
+                            right_run = run
+                        end
+                    end
+                end
+
+                if
+                    (left_run >= 0.50 and right_run >= 0.50)
+                    or (left_run >= 0.65 and right_run >= 0.35)
+                    or (right_run >= 0.65 and left_run >= 0.35)
+                then
+                    local score = (left_run + right_run) - val_r
+                    if score > best_score then
+                        best_score = score
+                        best_split = x
+                    end
+                end
+            end
+        end
+    end
+
+    return best_split
+end
+
 --- Split a region on its widest gutter, recursing until none remains.
 ---
 --- @param map PPPageMap Page ink map.
@@ -645,6 +760,20 @@ local function cut(map, x0, y0, x1, y1, depth, ctx, out)
                 return
             end
         end
+
+        -- 4-koma / double-panel centerline split.
+        -- In manga mode, when a tier spanning the page width has no clear blank gutter
+        -- (due to downsampled narrow vertical seams flanked by dark borders),
+        -- search the central corridor for a vertical separator flanked by panel borders.
+        if ctx.mode == "manga" then
+            local k_split = find4KomaCenterlineSplit(map, left, top, right, bottom, ctx.cols)
+            if k_split then
+                ctx.koma_splits = ctx.koma_splits + 1
+                cut(map, left, top, k_split - 1, bottom, depth + 1, ctx, out)
+                cut(map, k_split + 1, top, right, bottom, depth + 1, ctx, out)
+                return
+            end
+        end
     end
 
     emitLeaf(left, top, right, bottom, region_ink, ctx, out)
@@ -715,6 +844,8 @@ function Segmenter.segment(map, settings)
         shear_searches = 0,
         shear_splits = 0,
         border_splits = 0,
+        mode = settings.mode or "manga",
+        koma_splits = 0,
     }
 
     local cells = {}
@@ -736,14 +867,15 @@ function Segmenter.segment(map, settings)
         })
     end
 
-    if ctx.shear_searches > 0 or ctx.border_splits > 0 then
+    if ctx.shear_searches > 0 or ctx.border_splits > 0 or ctx.koma_splits > 0 then
         stop(
             string.format(
-                "%d panels, %d of %d slanted searches split, %d border-line splits",
+                "%d panels, %d of %d slanted searches split, %d border-line splits, %d 4-koma splits",
                 #panels,
                 ctx.shear_splits,
                 ctx.shear_searches,
-                ctx.border_splits
+                ctx.border_splits,
+                ctx.koma_splits
             )
         )
     else

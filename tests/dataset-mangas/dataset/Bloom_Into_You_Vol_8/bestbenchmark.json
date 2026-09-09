@@ -4,13 +4,13 @@
     "f1": 0.7992,
     "gap_tolerance": 35,
     "iou_threshold": 0.5000,
-    "mean_iou": 0.8805,
+    "mean_iou": 0.8782,
     "pages_evaluated": 213,
-    "precision": 0.7479,
-    "recall": 0.8581,
-    "total_detected": 833,
+    "precision": 0.7458,
+    "recall": 0.8609,
+    "total_detected": 838,
     "total_ground_truth": 726,
-    "true_positives": 623
+    "true_positives": 625
   },
   "preview": {
     "f1": 1.0000,
