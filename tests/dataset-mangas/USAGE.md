@@ -206,37 +206,51 @@ Coordinates (`x`, `y`, `w`, `h`) are saved in the native pixel resolution of the
 
 ---
 
-## Running Benchmarks with Your Private Dataset
+## Running Benchmarks & Tests
 
-Once you have annotated pages, you can evaluate PanelsPlus's segmentation accuracy directly against your hand-crafted data using the benchmark tool:
+PanelsPlus provides convenient root executable scripts to run benchmarks and test suites:
+
+### 1. Running Benchmarks (`./run-benchmark.sh`)
 
 ```bash
-# Evaluate all pages in your private dataset (default location)
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset
+# Benchmark default human-annotated dataset (Bloom_Into_You_Vol_8)
+./run-benchmark.sh
 
-# Evaluate a specific book
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --book my_manga
+# Benchmark all discovered manga datasets
+./run-benchmark.sh --all
 
-# Inspect a specific page with full box coordinates & IoU breakdown
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --book my_manga --page 1
+# Benchmark and auto-update bestbenchmark.json when accuracy improves
+./run-benchmark.sh --update-best
 
-# Only report pages with detection discrepancies
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --failures-only
+# Benchmark a specific book
+./run-benchmark.sh --book Bloom_Into_You_Vol_8
 
-# Strict IoU threshold (default is 0.50)
-lua tools/benchmark_panels.lua --dataset tests/dataset-mangas/dataset --threshold 0.75
+# Inspect a single page with full box coordinates & IoU breakdown
+./run-benchmark.sh --book Bloom_Into_You_Vol_8 --page 1
+
+# Only report pages with detection discrepancies (F1 < 1.0)
+./run-benchmark.sh --failures-only
 ```
 
----
+### 2. Regression Tracking with `bestbenchmark.json`
 
-## Automated Tests
+Each manga dataset directory (`tests/dataset-mangas/dataset/<manganame>/`) contains a `bestbenchmark.json` file recording the highest precision, recall, F1 score, and mean IoU ever achieved.
 
-To ensure the annotator engine and reader backends are working correctly:
+- **Regression Protection**: Tests in `<manganame>_spec.lua` enforce that results are **never worse** than `bestbenchmark.json`. If a refactor causes accuracy to drop, the test fails with a `REGRESSION` alert.
+- **Auto-Record Updates**: If an algorithm improvement achieves higher accuracy (better F1 score or recall), `bestbenchmark.json` is automatically updated with the new record metrics.
+
+### 3. Automated Test Suite (`./run-tests.sh`)
 
 ```bash
-# Run annotator test suite (headless)
-python3 -m unittest tests/dataset-mangas/annotator/test_annotator.py
+# Run everything: linters, Python annotator tests, and Lua test specs
+./run-tests.sh
 
-# Run full PanelsPlus test suite
-lua tests/run_tests.lua
+# Quick mode: run Lua test specs directly (skipping check.sh)
+./run-tests.sh --quick
+
+# Code style and linter checks only
+./run-tests.sh --check-only
+
+# Run a specific spec file
+./run-tests.sh tests/dataset-mangas/dataset/Bloom_Into_You_Vol_8/bloom_into_you_spec.lua
 ```

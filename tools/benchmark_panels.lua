@@ -19,12 +19,14 @@ local Manifest = require("tests.dataset-mangas.dataset_manifest")
 local Loader = require("tests.dataset-mangas.dataset_loader")
 local Evaluator = require("tests.dataset-mangas.panel_evaluator")
 local Segmenter = require("src._segmenter")
+local BenchmarkTracker = require("tests.dataset-mangas.benchmark_tracker")
 
 -- Parse CLI arguments
 local target_book = nil
 local target_page = nil
 local run_all = false
 local failures_only = false
+local update_best = false
 local iou_threshold = 0.5
 local dataset_dir = repo_root .. "tests/dataset-mangas/dataset"
 
@@ -35,6 +37,8 @@ while idx <= #arg do
         run_all = true
     elseif a == "--failures-only" then
         failures_only = true
+    elseif a == "--update-best" or a == "--update" then
+        update_best = true
     elseif a == "--book" and arg[idx + 1] then
         idx = idx + 1
         target_book = arg[idx]
@@ -191,3 +195,25 @@ print(
         page_count > 0 and (total_order_ok * 100 / page_count) or 0
     )
 )
+
+if target_book and not target_page then
+    local book_dir = dataset_dir .. "/" .. target_book
+    local is_full = (page_count >= 100)
+    local mode = is_full and "full_volume" or "preview"
+    local current_metrics = {
+        pages_evaluated = page_count,
+        total_ground_truth = total_gt,
+        total_detected = total_det,
+        true_positives = total_tp,
+        precision = global_prec,
+        recall = global_rec,
+        f1 = global_f1,
+        mean_iou = avg_m_iou,
+        gap_tolerance = 35,
+        iou_threshold = iou_threshold,
+    }
+    local ok, reason = BenchmarkTracker.checkAndUpdate(book_dir, mode, current_metrics, update_best)
+    if not ok then
+        print("\n  [REGRESSION ALERT] " .. tostring(reason))
+    end
+end

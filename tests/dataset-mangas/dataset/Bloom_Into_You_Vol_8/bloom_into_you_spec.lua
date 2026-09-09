@@ -14,6 +14,7 @@ local Manifest = require("tests.dataset-mangas.dataset_manifest")
 local Loader = require("tests.dataset-mangas.dataset_loader")
 local Evaluator = require("tests.dataset-mangas.panel_evaluator")
 local Segmenter = require("src._segmenter")
+local BenchmarkTracker = require("tests.dataset-mangas.benchmark_tracker")
 
 local BOOK_TITLE = "Bloom_Into_You_Vol_8"
 local BOOK_DIR = "tests/dataset-mangas/dataset/" .. BOOK_TITLE
@@ -218,9 +219,14 @@ describe("Bloom Into You human-annotated dataset validation", function()
         end
 
         assert.is_true(total_tp >= 1, "Expected at least 1 true positive match")
+        local global_precision = total_det > 0 and (total_tp / total_det) or 0
         local global_recall = total_gt > 0 and (total_tp / total_gt) or 0
+        local global_f1 = (global_precision + global_recall > 0)
+                and (2 * global_precision * global_recall / (global_precision + global_recall))
+            or 0
         local mean_iou = evaluated_count > 0 and (total_iou / evaluated_count) or 0
 
+        -- General sanity thresholds
         assert.is_true(
             global_recall >= 0.80,
             string.format("Expected global recall >= 80%% across tested pages (got %.1f%%)", global_recall * 100)
@@ -229,5 +235,23 @@ describe("Bloom Into You human-annotated dataset validation", function()
             mean_iou >= 0.75,
             string.format("Expected mean IoU >= 0.75 across tested pages (got %.2f)", mean_iou)
         )
+
+        -- Enforce regression protection against bestbenchmark.json:
+        -- Results must be equal or better than historical best. If better, bestbenchmark.json is updated!
+        local current_metrics = {
+            pages_evaluated = max_test_pages,
+            total_ground_truth = total_gt,
+            total_detected = total_det,
+            true_positives = total_tp,
+            precision = global_precision,
+            recall = global_recall,
+            f1 = global_f1,
+            mean_iou = mean_iou,
+            gap_tolerance = 35,
+            iou_threshold = 0.50,
+        }
+        local mode = is_full_volume and "full_volume" or "preview"
+        local ok, regression_err = BenchmarkTracker.checkAndUpdate(BOOK_DIR, mode, current_metrics)
+        assert.is_true(ok, tostring(regression_err))
     end)
 end)
