@@ -20,6 +20,9 @@ function BenchmarkTracker.load(book_dir)
     end
     local content = f:read("*a")
     f:close()
+    if not content or not content:find("%S") then
+        return nil
+    end
     return JSON.decode(content)
 end
 

@@ -98,6 +98,7 @@ local total_det = 0
 local total_tp = 0
 local sum_f1 = 0
 local sum_iou = 0
+local evaluated_count = 0
 local total_order_ok = 0
 local page_count = 0
 local failure_count = 0
@@ -114,6 +115,7 @@ for _, page in ipairs(pages) do
         sum_f1 = sum_f1 + result.f1
         if result.true_positives > 0 then
             sum_iou = sum_iou + result.mean_iou
+            evaluated_count = evaluated_count + 1
         end
         if result.reading_order_correct then
             total_order_ok = total_order_ok + 1
@@ -177,7 +179,7 @@ local global_prec = total_det > 0 and (total_tp / total_det) or 0
 local global_rec = total_gt > 0 and (total_tp / total_gt) or 0
 local global_f1 = (global_prec + global_rec > 0) and (2 * global_prec * global_rec / (global_prec + global_rec)) or 0
 local avg_page_f1 = page_count > 0 and (sum_f1 / page_count) or 0
-local avg_m_iou = page_count > 0 and (sum_iou / page_count) or 0
+local avg_m_iou = evaluated_count > 0 and (sum_iou / evaluated_count) or 0
 
 print("SUMMARY METRICS:")
 print(string.format("  Pages Evaluated:       %d (%d with issues)", page_count, failure_count))

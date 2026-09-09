@@ -117,47 +117,82 @@ function DatasetLoader.loadPageMap(image_path, settings)
         return DatasetLoader._cache[cache_key]
     end
 
-    local magick = DatasetLoader.getMagickCommand()
-    if not magick then
-        error("ImageMagick ('magick' or 'convert') is required to load test images.")
-    end
+    local cache_dir = "tests/dataset-mangas/.cache/pagemaps"
+    local safe_name = image_path:gsub("[/\\]", "_")
+    local disk_cache_path = string.format("%s/%s_w%d.bin", cache_dir, safe_name, target_w)
 
-    -- 1. Read native dimensions (pure Lua fast path for PNG, magick fallback for others)
-    local native_w, native_h = readPngDimensions(image_path)
-    if not native_w or not native_h then
-        local dim_pipe = io.popen(string.format('%s "%s" -format "%%w %%h" info: 2>/dev/null', magick, image_path), "r")
-        if not dim_pipe then
-            error("Failed to read image dimensions for: " .. image_path)
+    local native_w, native_h, target_h, bg, raw
+    local f_cache = io.open(disk_cache_path, "rb")
+    if f_cache then
+        local header_line = f_cache:read("*l")
+        if header_line then
+            local nw, nh, tw, th, b = header_line:match("^(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)$")
+            if nw and nh and tw and th and b and tonumber(tw) == target_w then
+                native_w = tonumber(nw)
+                native_h = tonumber(nh)
+                target_h = tonumber(th)
+                bg = tonumber(b)
+                raw = f_cache:read("*a")
+            end
         end
-        local dim_str = dim_pipe:read("*a")
-        dim_pipe:close()
-
-        native_w, native_h = dim_str:match("(%d+)%s+(%d+)")
-        native_w, native_h = tonumber(native_w), tonumber(native_h)
-    end
-    if not native_w or not native_h or native_w == 0 or native_h == 0 then
-        error(string.format("Invalid dimensions for image %s", image_path))
+        f_cache:close()
     end
 
-    -- 2. Determine downscaled target dimensions
-    local target_h = math.max(1, math.floor(target_w * native_h / native_w))
+    if not raw or #raw < target_w * (target_h or 1) then
+        local magick = DatasetLoader.getMagickCommand()
+        if not magick then
+            error("ImageMagick ('magick' or 'convert') is required to load test images.")
+        end
 
-    -- 3. Stream downscaled greyscale bytes
-    local cmd =
-        string.format('%s "%s" -resize %dx%d! -depth 8 gray:- 2>/dev/null', magick, image_path, target_w, target_h)
-    local img_pipe = io.popen(cmd, "r")
-    if not img_pipe then
-        error("Failed to run magick stream command: " .. cmd)
+        -- 1. Read native dimensions (pure Lua fast path for PNG, magick fallback for others)
+        native_w, native_h = readPngDimensions(image_path)
+        if not native_w or not native_h then
+            local dim_pipe =
+                io.popen(string.format('%s "%s" -format "%%w %%h" info: 2>/dev/null', magick, image_path), "r")
+            if not dim_pipe then
+                error("Failed to read image dimensions for: " .. image_path)
+            end
+            local dim_str = dim_pipe:read("*a")
+            dim_pipe:close()
+
+            native_w, native_h = dim_str:match("(%d+)%s+(%d+)")
+            native_w, native_h = tonumber(native_w), tonumber(native_h)
+        end
+        if not native_w or not native_h or native_w == 0 or native_h == 0 then
+            error(string.format("Invalid dimensions for image %s", image_path))
+        end
+
+        -- 2. Determine downscaled target dimensions
+        target_h = math.max(1, math.floor(target_w * native_h / native_w))
+
+        -- 3. Stream downscaled greyscale bytes
+        local cmd =
+            string.format('%s "%s" -resize %dx%d! -depth 8 gray:- 2>/dev/null', magick, image_path, target_w, target_h)
+        local img_pipe = io.popen(cmd, "r")
+        if not img_pipe then
+            error("Failed to run magick stream command: " .. cmd)
+        end
+        raw = img_pipe:read("*a")
+        img_pipe:close()
+
+        if #raw < target_w * target_h then
+            error(string.format("Truncated image data: expected %d bytes, got %d", target_w * target_h, #raw))
+        end
+
+        -- 4. Background estimation
+        bg = estimateBackground(raw, target_w, target_h)
+
+        -- Save to disk cache for near-instant subsequent loads
+        os.execute("mkdir -p " .. cache_dir)
+        local f_out = io.open(disk_cache_path .. ".tmp", "wb")
+        if f_out then
+            f_out:write(string.format("%d %d %d %d %d\n", native_w, native_h, target_w, target_h, bg))
+            f_out:write(raw)
+            f_out:close()
+            os.rename(disk_cache_path .. ".tmp", disk_cache_path)
+        end
     end
-    local raw = img_pipe:read("*a")
-    img_pipe:close()
 
-    if #raw < target_w * target_h then
-        error(string.format("Truncated image data: expected %d bytes, got %d", target_w * target_h, #raw))
-    end
-
-    -- 4. Background estimation
-    local bg = estimateBackground(raw, target_w, target_h)
     local inverted = bg < 128
     local ink_delta = settings.segment_ink_delta or defaults.segment_ink_delta or 30
 

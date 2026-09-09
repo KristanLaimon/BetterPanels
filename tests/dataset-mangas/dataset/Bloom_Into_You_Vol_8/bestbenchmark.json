@@ -1,28 +1,28 @@
 {
   "book_title": "Bloom_Into_You_Vol_8",
   "full_volume": {
-    "pages_evaluated": 213,
-    "total_ground_truth": 726,
-    "total_detected": 833,
-    "true_positives": 621,
-    "precision": 0.7455,
-    "recall": 0.8554,
-    "f1": 0.7967,
-    "mean_iou": 0.8830,
+    "f1": 0.7992,
     "gap_tolerance": 35,
-    "iou_threshold": 0.50
+    "iou_threshold": 0.5000,
+    "mean_iou": 0.8805,
+    "pages_evaluated": 213,
+    "precision": 0.7479,
+    "recall": 0.8581,
+    "total_detected": 833,
+    "total_ground_truth": 726,
+    "true_positives": 623
   },
   "preview": {
+    "f1": 1.0000,
+    "gap_tolerance": 35,
+    "iou_threshold": 0.5000,
+    "mean_iou": 0.9583,
     "pages_evaluated": 3,
-    "total_ground_truth": 3,
-    "total_detected": 3,
-    "true_positives": 3,
     "precision": 1.0000,
     "recall": 1.0000,
-    "f1": 1.0000,
-    "mean_iou": 0.9583,
-    "gap_tolerance": 35,
-    "iou_threshold": 0.50
+    "total_detected": 3,
+    "total_ground_truth": 3,
+    "true_positives": 3
   },
-  "updated_at": "2026-09-08"
+  "updated_at": "2026-09-09"
 }

@@ -1,0 +1,16 @@
+{
+  "book_title": "Miss_Kobayashi's_Dragon_Maid_Vol_2",
+  "full_volume": {
+    "f1": 0.6174,
+    "gap_tolerance": 35,
+    "iou_threshold": 0.5000,
+    "mean_iou": 0.8268,
+    "pages_evaluated": 143,
+    "precision": 0.6734,
+    "recall": 0.5700,
+    "total_detected": 496,
+    "total_ground_truth": 586,
+    "true_positives": 334
+  },
+  "updated_at": "2026-09-09"
+}

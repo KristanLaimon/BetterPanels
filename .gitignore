@@ -47,3 +47,7 @@ tests/dataset-mangas/dataset/*/*.png
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local benchmark and dataset cache
+.cache/
+tests/dataset-mangas/.cache/

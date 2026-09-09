@@ -795,6 +795,27 @@ function Segmenter.accept(panels, map, settings)
         if largest_area >= page_area * single_ratio then
             return true
         end
+        -- If the lone panel captures almost all the page's ink, the rest of the
+        -- page is blank margin (e.g. an omake, bonus strip, or chapter end illustration)
+        -- rather than an unsegmented multi-panel layout.
+        if map.ink and map.ink > 0 and map.data then
+            local mx0 = math.max(0, math.floor(panels[1].x / map.scale_x))
+            local my0 = math.max(0, math.floor(panels[1].y / map.scale_y))
+            local mx1 = math.min(map.w - 1, math.floor((panels[1].x + panels[1].w) / map.scale_x))
+            local my1 = math.min(map.h - 1, math.floor((panels[1].y + panels[1].h) / map.scale_y))
+            local p_ink = 0
+            for y = my0, my1 do
+                local base = y * map.w
+                for x = mx0, mx1 do
+                    if map.data[base + x] == 1 then
+                        p_ink = p_ink + 1
+                    end
+                end
+            end
+            if p_ink >= map.ink * 0.70 then
+                return true
+            end
+        end
         return false, "single partial panel"
     end
 

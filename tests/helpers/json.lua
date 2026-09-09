@@ -6,8 +6,8 @@
 local JSON = {}
 
 function JSON.decode(str)
-    if not str or type(str) ~= "string" then
-        return nil, "expected string"
+    if not str or type(str) ~= "string" or not str:find("%S") then
+        return nil, "expected non-empty string"
     end
 
     local pos = 1
@@ -160,6 +160,80 @@ function JSON.decode(str)
 
     skipWhitespace()
     return parseValue()
+end
+
+--- Encode a Lua table/value to a formatted JSON string.
+---
+--- @param val any
+--- @param indent string|nil Optional indentation string (default "  ")
+--- @return string
+function JSON.encode(val, indent)
+    indent = indent or "  "
+    local function encode_str(s)
+        s = s:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "\\r"):gsub("\t", "\\t")
+        return '"' .. s .. '"'
+    end
+
+    local function is_array(t)
+        if #t == 0 then
+            return false
+        end
+        local count = 0
+        for _ in pairs(t) do
+            count = count + 1
+        end
+        return count == #t
+    end
+
+    local function serialize(v, depth)
+        local t = type(v)
+        if v == nil then
+            return "null"
+        elseif t == "boolean" then
+            return v and "true" or "false"
+        elseif t == "number" then
+            if v ~= v or v == math.huge or v == -math.huge then
+                return "null"
+            end
+            if math.type and math.type(v) == "integer" then
+                return string.format("%d", v)
+            elseif math.floor(v) == v and math.abs(v) < 1e14 and not tostring(v):find("%.") then
+                return string.format("%d", v)
+            else
+                return string.format("%.4f", v)
+            end
+        elseif t == "string" then
+            return encode_str(v)
+        elseif t == "table" then
+            local prefix = string.rep(indent, depth)
+            local inner_prefix = string.rep(indent, depth + 1)
+            if is_array(v) then
+                local items = {}
+                for i = 1, #v do
+                    table.insert(items, inner_prefix .. serialize(v[i], depth + 1))
+                end
+                return "[\n" .. table.concat(items, ",\n") .. "\n" .. prefix .. "]"
+            else
+                local keys = {}
+                for k in pairs(v) do
+                    table.insert(keys, tostring(k))
+                end
+                table.sort(keys)
+                if #keys == 0 then
+                    return "{}"
+                end
+                local items = {}
+                for _, k in ipairs(keys) do
+                    local val_str = serialize(v[k], depth + 1)
+                    table.insert(items, inner_prefix .. encode_str(k) .. ": " .. val_str)
+                end
+                return "{\n" .. table.concat(items, ",\n") .. "\n" .. prefix .. "}"
+            end
+        end
+        return "null"
+    end
+
+    return serialize(val, 0)
 end
 
 return JSON
