@@ -29,6 +29,7 @@ Options:
   -u, --update-best    Update bestbenchmark.json if the current run beats the historical record
   -f, --failures-only  Display only pages with imperfect detection (F1 < 1.0)
   -t, --threshold <n>  IoU threshold for true positive match (default: 0.50)
+  --detector <name>    segmenter (default) or experimental components
 
 Examples:
   ./run-benchmark.sh

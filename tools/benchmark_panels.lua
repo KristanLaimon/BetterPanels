@@ -27,6 +27,7 @@ local target_page = nil
 local run_all = false
 local failures_only = false
 local update_best = false
+local detector_name = "segmenter"
 local iou_threshold = 0.5
 local dataset_dir = repo_root .. "tests/dataset-mangas/dataset"
 
@@ -51,8 +52,23 @@ while idx <= #arg do
     elseif a == "--dataset" and arg[idx + 1] then
         idx = idx + 1
         dataset_dir = arg[idx]
+    elseif a == "--detector" and arg[idx + 1] then
+        idx = idx + 1
+        detector_name = arg[idx]
     end
     idx = idx + 1
+end
+
+local detector = Segmenter
+if detector_name == "components" then
+    detector = require("src._componentdetector")
+elseif detector_name ~= "segmenter" then
+    io.stderr:write("Unknown detector: " .. detector_name .. " (choose segmenter or components)\n")
+    os.exit(1)
+end
+if update_best and detector_name ~= "segmenter" then
+    io.stderr:write("Experimental component results must not overwrite segmenter benchmark records.\n")
+    os.exit(1)
 end
 
 -- Select pages to evaluate
@@ -91,6 +107,7 @@ if #pages == 0 then
 end
 
 print(string.format("Evaluating %d page(s) (IoU threshold: %.2f)...", #pages, iou_threshold))
+print("Detector: " .. detector_name)
 print(string.rep("-", 80))
 
 local total_gt = 0
@@ -106,7 +123,7 @@ local failure_count = 0
 for _, page in ipairs(pages) do
     if page.frames and #page.frames > 0 then
         local map = Loader.loadPageMap(page.image_path)
-        local detected = Segmenter.detectPage(map, { mode = page.reading_order })
+        local detected = detector.detectPage(map, { mode = page.reading_order })
         local result = Evaluator.evaluate(page.frames, detected, iou_threshold, 35)
 
         total_gt = total_gt + result.ground_truth_count
@@ -198,7 +215,7 @@ print(
     )
 )
 
-if target_book and not target_page then
+if target_book and not target_page and detector_name == "segmenter" then
     local book_dir = dataset_dir .. "/" .. target_book
     local is_full = (page_count >= 100)
     local mode = is_full and "full_volume" or "preview"

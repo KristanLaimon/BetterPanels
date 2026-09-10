@@ -45,6 +45,13 @@ Formats with StyLua and validates with Luacheck:
 
 A dedicated CLI tool (`tools/benchmark_panels.lua`) is provided to evaluate panel detection across real manga pages:
 
+The experimental connected-component candidate can be evaluated with
+`./run-benchmark.sh --detector components --all`. It is not yet active in the
+reader. See the [full-volume results and pending decisions](dataset-mangas/report/component-detector-2026-09-09.md).
+The default benchmark continues to score the original Lua segmenter; the reader
+currently calls the native detector, so these benchmark scores are not a direct
+measurement of the active reader path.
+
 ### Evaluate the Curated Golden Set
 ```bash
 lua tools/benchmark_panels.lua
