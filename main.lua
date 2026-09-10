@@ -339,6 +339,11 @@ function PanelsPlus:onCloseWidget()
     self:clearPanelCache()
     self:restoreNativePanelZoom()
 
+    local ok, ComponentDetector = pcall(require, "src._componentdetector")
+    if ok and ComponentDetector.clearScratch then
+        ComponentDetector.clearScratch()
+    end
+
     local minimum = self.settings.prerender_min_free_bytes or Settings.defaults.prerender_min_free_bytes
     if not Memory.hasHeadroom(minimum) then
         collectgarbage("collect")

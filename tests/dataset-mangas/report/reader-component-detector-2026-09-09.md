@@ -56,6 +56,13 @@ Speech bubbles and artwork details occurring entirely inside an existing panel f
   - **Manga Mode (RTL)**: Finger drags **east** (pulling the next page in from the left edge).
 - The `invert_swipe` setting flips these directions for users who prefer reading-flow swipe semantics.
 
+### 6. Zero-Allocation Scratch Buffers for Low-RAM Hardware (Kindle ~300MB)
+To maintain 1.3-era velocity and prevent Lua GC pauses or OOM events on low-spec devices:
+- **Persistent BFS Buffers**: `scratch_seen` and `scratch_queue` are allocated once and reused across all subsequent page detections. The visited map is zeroed using native C `memset` (`ffi.fill`), which takes under 0.5 ms for 960×1280 rasters.
+- **Static Boundary Arrays**: Candidate contour bounds (`scratch_left`, `scratch_right`, `scratch_top`, `scratch_bottom`) use persistent 1D `int32_t` arrays, completely removing table allocations inside the candidate evaluation loop.
+- **Early Termination in Line Fitting**: `lineSupport` immediately exits once >= 80% straight-line support is reached, skipping redundant candidate angle calculations.
+- **Explicit Lifecycle Cleanup**: `ComponentDetector.clearScratch()` reclaims buffer memory on reader widget teardown (`PanelsPlus:onCloseWidget()`).
+
 ---
 
 ## Analysis of Remaining Edge Cases

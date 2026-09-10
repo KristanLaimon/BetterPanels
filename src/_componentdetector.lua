@@ -9,6 +9,55 @@ local Settings = require("src._settings")
 --- the grouping policy and reader integration have been reviewed.
 local ComponentDetector = {}
 
+local scratch_capacity = 0
+local scratch_seen = nil
+local scratch_queue = nil
+
+local scratch_white_capacity = 0
+local scratch_white = nil
+
+local scratch_dim_capacity = 0
+local scratch_left = nil
+local scratch_right = nil
+local scratch_top = nil
+local scratch_bottom = nil
+
+local function ensureScratch(size, max_dim)
+    if scratch_capacity < size then
+        scratch_capacity = size
+        scratch_seen = ffi.new("uint8_t[?]", size)
+        scratch_queue = ffi.new("int32_t[?]", size)
+    end
+    if scratch_dim_capacity < max_dim then
+        scratch_dim_capacity = max_dim
+        scratch_left = ffi.new("int32_t[?]", max_dim)
+        scratch_right = ffi.new("int32_t[?]", max_dim)
+        scratch_top = ffi.new("int32_t[?]", max_dim)
+        scratch_bottom = ffi.new("int32_t[?]", max_dim)
+    end
+end
+
+local function ensureWhiteScratch(size)
+    if scratch_white_capacity < size then
+        scratch_white_capacity = size
+        scratch_white = ffi.new("uint8_t[?]", size)
+    end
+end
+
+--- Release scratch buffers to free memory when closing widgets or low memory.
+function ComponentDetector.clearScratch()
+    scratch_capacity = 0
+    scratch_seen = nil
+    scratch_queue = nil
+    scratch_white_capacity = 0
+    scratch_white = nil
+    scratch_dim_capacity = 0
+    scratch_left = nil
+    scratch_right = nil
+    scratch_top = nil
+    scratch_bottom = nil
+end
+
 --- Fraction of a component boundary supported by a straight (possibly tilted)
 --- line. Several well-separated sample pairs make this insensitive to a
 --- balloon protruding through one corner; curved face/balloon outlines do not
@@ -31,49 +80,62 @@ local function lineSupport(values, first, last, tolerance)
                         count = count + 1
                     end
                 end
-                best = math.max(best, count / (span + 1))
+                local ratio = count / (span + 1)
+                if ratio > best then
+                    best = ratio
+                    if best >= 0.80 then
+                        return best
+                    end
+                end
             end
         end
     end
     return best
 end
 
+local INF = 100000000
+
 local function frameSides(queue, count, map_width, box, tolerance)
-    local left, right, top, bottom = {}, {}, {}, {}
     for y = box.y, box.y + box.h - 1 do
-        left[y], right[y] = math.huge, -1
+        scratch_left[y], scratch_right[y] = INF, -1
     end
     for x = box.x, box.x + box.w - 1 do
-        top[x], bottom[x] = math.huge, -1
+        scratch_top[x], scratch_bottom[x] = INF, -1
     end
     for index = 0, count - 1 do
         local p = queue[index]
         local y = math.floor(p / map_width)
         local x = p - y * map_width
-        left[y], right[y] = math.min(left[y], x), math.max(right[y], x)
-        top[x], bottom[x] = math.min(top[x], y), math.max(bottom[x], y)
+        if x < scratch_left[y] then scratch_left[y] = x end
+        if x > scratch_right[y] then scratch_right[y] = x end
+        if y < scratch_top[x] then scratch_top[x] = y end
+        if y > scratch_bottom[x] then scratch_bottom[x] = y end
     end
     local sides = 0
-    for _, support in ipairs({
-        lineSupport(left, box.y, box.y + box.h - 1, tolerance),
-        lineSupport(right, box.y, box.y + box.h - 1, tolerance),
-        lineSupport(top, box.x, box.x + box.w - 1, tolerance),
-        lineSupport(bottom, box.x, box.x + box.w - 1, tolerance),
-    }) do
-        if support >= 0.80 then
-            sides = sides + 1
-        end
+    if lineSupport(scratch_left, box.y, box.y + box.h - 1, tolerance) >= 0.80 then
+        sides = sides + 1
+    end
+    if lineSupport(scratch_right, box.y, box.y + box.h - 1, tolerance) >= 0.80 then
+        sides = sides + 1
+    end
+    if lineSupport(scratch_top, box.x, box.x + box.w - 1, tolerance) >= 0.80 then
+        sides = sides + 1
+    end
+    if lineSupport(scratch_bottom, box.x, box.x + box.w - 1, tolerance) >= 0.80 then
+        sides = sides + 1
     end
     return sides
 end
 
 --- Extract substantial 8-connected components without modifying the input.
---- The two scratch arrays cost five bytes per map cell with LuaJIT (about
---- 1.5 MB at 480x637). Tiny components are discarded before allocating boxes.
+--- Reuses persistent scratch arrays across page turns to eliminate GC churn
+--- on low-memory e-ink devices. Tiny components are discarded before allocating boxes.
 local function collectComponents(map, min_side, min_area)
     local width, height, data = map.w, map.h, map.data
-    local seen = ffi.new("uint8_t[?]", width * height)
-    local queue = ffi.new("int32_t[?]", width * height)
+    ensureScratch(width * height, math.max(width, height))
+    ffi.fill(scratch_seen, width * height, 0)
+    local queue = scratch_queue
+    local seen = scratch_seen
     local components = {}
 
     for index = 0, width * height - 1 do
@@ -86,8 +148,10 @@ local function collectComponents(map, min_side, min_area)
                 head = head + 1
                 local y = math.floor(position / width)
                 local x = position - y * width
-                left, right = math.min(left, x), math.max(right, x)
-                top, bottom = math.min(top, y), math.max(bottom, y)
+                if x < left then left = x end
+                if x > right then right = x end
+                if y < top then top = y end
+                if y > bottom then bottom = y end
                 for ny = math.max(0, y - 1), math.min(height - 1, y + 1) do
                     for nx = math.max(0, x - 1), math.min(width - 1, x + 1) do
                         local neighbor = ny * width + nx
@@ -215,8 +279,10 @@ function ComponentDetector.segment(map, settings)
         framed[#framed + 1] = box
     end
     if settings.component_holes then
-        local white = ffi.new("uint8_t[?]", map.w * map.h)
-        for index = 0, map.w * map.h - 1 do
+        local size = map.w * map.h
+        ensureWhiteScratch(size)
+        local white = scratch_white
+        for index = 0, size - 1 do
             white[index] = map.data[index] == 0 and 1 or 0
         end
         local holes = collectComponents({ w = map.w, h = map.h, data = white }, 0.04, map.w * map.h * 0.005)

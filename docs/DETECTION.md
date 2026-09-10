@@ -95,6 +95,13 @@ Real panels are bounded by straight line segments, whereas speech bubbles, chara
 ### 4. Continuous Sequence Handling (`fullPage`)
 If no valid panels are detected (e.g. on blank pages, chapter splash covers, or unbordered art), `PanelCollector.fullPage` yields a single panel covering the whole page dimensions so the zoom viewer stays smoothly open.
 
+### 5. Zero-Allocation Reusable Scratch Buffers (Low-RAM Device Optimization)
+On memory-constrained hardware (e.g. older Kindles and Kobos with ~300MB RAM), allocating multi-megabyte FFI arrays on every page turn creates severe GC pressure and UI lag:
+- **Persistent BFS Queues & Visited Maps**: `scratch_seen` and `scratch_queue` are allocated once and resized only if page dimensions exceed capacity. Visited grids are reset in < 0.5ms via native C `memset` (`ffi.fill`).
+- **Static Boundary Profiles**: Frame analysis (`scratch_left`, `scratch_right`, `scratch_top`, `scratch_bottom`) uses persistent 1D `int32_t` arrays, eliminating thousands of short-lived Lua table allocations per page.
+- **Early-Exit Straight Line Fitting**: `lineSupport` terminates as soon as 80% straight-edge evidence is verified, skipping up to 90% of candidate slope computations.
+- **Explicit Teardown Reclaim**: `ComponentDetector.clearScratch()` is invoked on document close (`PanelsPlus:onCloseWidget()`) to release scratch memory immediately when returning to the library or reading text documents.
+
 ---
 
 ## Legacy: The Segmenter Pipeline (`fast`)

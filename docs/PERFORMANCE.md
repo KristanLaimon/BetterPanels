@@ -160,6 +160,7 @@ Anything Panels+ holds makes that worse.
 | --- | --- | --- |
 | Panel rectangle lists | `panel_cache_pages` (12) pages | ~a few hundred bytes per page |
 | Ink map | during detection only | ~340KB, then collected |
+| Component scratch buffers | while document open, freed on close | ~5.8MB FFI arrays (reused across all pages) |
 | Greyscale copy (colour pages only) | during detection only | ~340KB, freed immediately |
 | Deep KOPT/Leptonica buffers | one Deep attempt | Full-source-size, manually freed and budget-gated |
 | Panel image list | while the viewer is open | render *functions*, not bitmaps |

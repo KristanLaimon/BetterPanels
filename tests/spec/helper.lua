@@ -155,6 +155,12 @@ preload("ffi", function()
             end
             return array
         end,
+        fill = function(dst, len, val)
+            val = val or 0
+            for index = 0, (len or 0) - 1 do
+                dst[index] = val
+            end
+        end,
         cast = function()
             return nil
         end,

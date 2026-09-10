@@ -118,4 +118,25 @@ describe("Experimental component detector", function()
         assert.is_false(accepted)
         assert.equals(960, panels[1].w)
     end)
+
+    it("reuses scratch buffers across detections and cleans up on clearScratch", function()
+        local map = page()
+        frame(map, 20, 20, 440, 600)
+        local panels1 = Detector.detectPage(map, { mode = "manga" })
+        assert.equals(1, #panels1)
+
+        -- Subsequent detection reuses scratch buffers
+        local panels2 = Detector.detectPage(map, { mode = "manga" })
+        assert.equals(1, #panels2)
+        assert.equals(panels1[1].x, panels2[1].x)
+
+        -- Clean up clears references cleanly
+        Detector.clearScratch()
+
+        -- Next detection seamlessly reinitializes scratch
+        local panels3 = Detector.detectPage(map, { mode = "manga" })
+        assert.equals(1, #panels3)
+        assert.equals(panels1[1].x, panels3[1].x)
+        Detector.clearScratch()
+    end)
 end)
