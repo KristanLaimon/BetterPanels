@@ -7,22 +7,21 @@ See also: [DETECTION.md](DETECTION.md) for the full detection pipeline these
 modes select between, and [ARCHITECTURE.md](ARCHITECTURE.md) for how the
 viewer and menu layers fit together.
 
-## The names are reader-facing, not implementation-facing
+## The Active Default: Component Mode (`components`)
 
-The `detector` setting has three internal values — `auto`, `fast`, `exact` —
-inherited from [DETECTION.md](DETECTION.md#two-detectors-two-failure-modes).
-The menu and the panel-view mode button don't show those; they show what each
-mode does for the reader instead:
+The primary detector is **Component Mode** (`components`). It performs 8-connected flood-fill analysis on the page's background-normalized ink map, with straight-line boundary verification (`frameSides`).
 
-| Menu / button label | `detector` value | What it always uses |
+| Menu / internal label | `detector` value | Primary Engine |
 | --- | --- | --- |
-| **Smart Mode** | `auto` | Quick, falling back to Deep per-page when Quick can't be trusted |
-| **Quick mode** | `fast` | The gutter-finding segmenter only |
-| **Deep mode** | `exact` | KOReader's own detector only |
+| **Component Mode (Default)** | `components` | 8-connected flood fill with geometric edge verification + full-page fallback |
+| **Deep Mode (Fallback)** | `exact` | KOReader's native K2pdfopt detector (available when small bitmap cannot be extracted) |
 
-("`native`" is a pre-rename value some older installs may still have on
-disk; [`Menu:getDetector`](../src/menu.lua) treats it the same as `exact`
-until settings migration runs.)
+### Swipe Navigation Directions
+
+Panels+ aligns swipe gestures with physical page-turning physics:
+- **Comic Mode (Left to Right)**: Drag **west** (pulling the next panel/page in from the right edge). Drag **east** to return to previous.
+- **Manga Mode (Right to Left)**: Drag **east** (pulling the next panel/page in from the left edge). Drag **west** to return to previous.
+- **Invert Swipe**: The *Invert panel swipe direction* menu option flips these gestures for readers who prefer flow-direction swipes.
 
 ## Quick mode
 

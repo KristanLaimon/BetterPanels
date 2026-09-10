@@ -105,10 +105,11 @@ flowchart TD
 | `src/viewer_controller.lua` | Opening viewers, page-boundary crossing, panel prerender |
 | `src/actions.lua` | Dispatcher-registered gesture actions |
 | `src/menu.lua` | Main-menu submenu construction |
-| `src/_panelcollector.lua` | Chooses a detector, builds lazy panel images and crop rects |
+| `src/_panelcollector.lua` | Runs ComponentDetector, provides full-page fallback, builds lazy panel images |
+| `src/_componentdetector.lua` | Primary 8-connected flood fill panel detector with straight-line boundary verification |
 | `src/_pagebitmap.lua` | Renders a page small and binarizes it into an ink map |
-| `src/_segmenter.lua` | Recursive X-Y cut over the ink map, plus its acceptance test |
-| `src/_nativedetector.lua` | KOReader's k2pdfopt detector, batched over one rasterization |
+| `src/_segmenter.lua` | Legacy recursive X-Y cut over the ink map, plus its acceptance test |
+| `src/_nativedetector.lua` | KOReader's k2pdfopt detector, batched over one rasterization (fallback) |
 | `src/_panelviewer.lua` | `ImageViewer` subclass: swipes, gestures, controls, screenshots |
 | `src/_wordfinder.lua` | Comic-lettering-aware word-box finder for touch-and-hold lookup, replacing KOReader's prose-tuned gap detector |
 | `src/_rotationpicker.lua` | Modal dialog for device rotation vs. plugin-only image rotation |
