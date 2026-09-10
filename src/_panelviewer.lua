@@ -427,17 +427,16 @@ end
 
 --- Return which horizontal swipe direction advances to the next panel.
 ---
---- Drag the current page away to reveal the next one: west for left-to-right
---- comics, east for right-to-left manga. Tap zones follow reading flow; the
---- finger's drag moves in the opposite direction.
+--- Swiping follows natural reading flow: east (left-to-right) for Comic mode,
+--- west (right-to-left) for Manga mode. Tap zones follow the same reading flow.
 ---
 --- @return '"west"'|'"east"' direction Swipe direction treated as next.
 function PanelViewer:getNextSwipeDirection()
     local direction
     if self.reading_mode == "comic" then
-        direction = "west"
-    else
         direction = "east"
+    else
+        direction = "west"
     end
     if self.invert_swipe then
         return direction == "west" and "east" or "west"

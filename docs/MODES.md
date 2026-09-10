@@ -18,10 +18,10 @@ The primary detector is **Component Mode** (`components`). It performs 8-connect
 
 ### Swipe Navigation Directions
 
-Panels+ aligns swipe gestures with physical page-turning physics:
-- **Comic Mode (Left to Right)**: Drag **west** (pulling the next panel/page in from the right edge). Drag **east** to return to previous.
-- **Manga Mode (Right to Left)**: Drag **east** (pulling the next panel/page in from the left edge). Drag **west** to return to previous.
-- **Invert Swipe**: The *Invert panel swipe direction* menu option flips these gestures for readers who prefer flow-direction swipes.
+Panels+ aligns swipe gestures with natural reading flow:
+- **Comic Mode (Left to Right)**: Swipe **east** (left-to-right) to advance to the next panel; swipe **west** to return to previous.
+- **Manga Mode (Right to Left)**: Swipe **west** (right-to-left) to advance to the next panel; swipe **east** to return to previous.
+- **Invert Swipe**: The *Invert panel swipe direction* menu option flips these gestures for readers who prefer drag-based page-turning gestures.
 
 ## Quick mode
 

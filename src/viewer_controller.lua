@@ -105,7 +105,8 @@ end
 --- @return boolean handled Always true for viewer callback dispatch.
 function ViewerController:toggleViewerMode(viewer)
     local current_rect = viewer.panels and viewer.panels[viewer._images_list_cur]
-    self:setMode(self.settings.mode == "manga" and "comic" or "manga")
+    local next_mode = (viewer.reading_mode or self.settings.mode) == "manga" and "comic" or "manga"
+    self:setMode(next_mode)
     if not current_rect then
         viewer.reading_mode = self.settings.mode
         viewer:replaceButtonTable()

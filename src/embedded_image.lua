@@ -294,7 +294,8 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
             self:cancelEmbeddedImageSearch(current_viewer)
         end,
         mode_toggle_callback = function(current_viewer)
-            self:setMode(self.settings.mode == "manga" and "comic" or "manga")
+            local next_mode = (current_viewer.reading_mode or self.settings.mode) == "manga" and "comic" or "manga"
+            self:setMode(next_mode)
             return self:reopenEmbeddedImagePanels(current_viewer)
         end,
         crop_toggle_callback = function(current_viewer)
@@ -357,6 +358,9 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
             self:setImageRotation(value)
             return true
         end,
+        device_rotate_callback = function(current_viewer, mode)
+            return self:setDeviceRotation(current_viewer, mode)
+        end,
         more_config_callback = function(current_viewer)
             return self:showMoreConfigMenu(current_viewer)
         end,
@@ -394,6 +398,29 @@ function EmbeddedImage:reopenEmbeddedImagePanels(viewer)
     viewer.embedded_source_image = nil -- transfer ownership to the replacement viewer
     UIManager:close(viewer)
     return self:showEmbeddedImagePanelsForImage(image, { start_point = start_point, buttons_visible = true })
+end
+
+--- Rotate the device/screen and reopen the embedded image viewer at the current panel.
+function EmbeddedImage:setDeviceRotation(viewer, mode)
+    if viewer._panels_plus_boundary_pending or not viewer.embedded_source_image then
+        return true
+    end
+    local panel = viewer.panels and viewer.panels[viewer._images_list_cur or 1]
+    local start_point = panel
+        and {
+            x = (panel.x or 0) + (panel.w or 0) / 2,
+            y = (panel.y or 0) + (panel.h or 0) / 2,
+        }
+    local image = viewer.embedded_source_image
+    local buttons_visible = viewer.buttons_visible
+    viewer.embedded_source_image = nil -- transfer ownership to the replacement viewer
+    UIManager:close(viewer)
+    UIManager:broadcastEvent(Event:new("SetRotationMode", mode))
+    UIManager:onRotation()
+    return self:showEmbeddedImagePanelsForImage(image, {
+        start_point = start_point,
+        buttons_visible = buttons_visible,
+    })
 end
 
 --- Probe a reader page for an image. ReaderRolling positions use screen

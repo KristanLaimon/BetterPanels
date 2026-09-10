@@ -167,3 +167,41 @@ describe("EmbeddedImage backward landing", function()
         assert.equals("previous", show:lastCall()[3].boundary_direction)
     end)
 end)
+
+describe("EmbeddedImage device rotation", function()
+    it("reopens the viewer at the current panel across screen rotation", function()
+        local show = spy()
+        show.return_value = true
+        local close = spy()
+        local broadcast = spy()
+        local rotated = spy()
+        local old_close, old_broadcast, old_rotation = UIManager.close, UIManager.broadcastEvent, UIManager.onRotation
+        UIManager.close = close
+        UIManager.broadcastEvent = broadcast
+        UIManager.onRotation = rotated
+
+        local image = { w = 800, h = 1200 }
+        local plugin = {
+            showEmbeddedImagePanelsForImage = show,
+        }
+        local viewer = {
+            panels = { { x = 0, y = 0, w = 400, h = 600 }, { x = 400, y = 0, w = 400, h = 600 } },
+            _images_list_cur = 2,
+            embedded_source_image = image,
+            buttons_visible = true,
+        }
+
+        assert.is_true(EmbeddedImage.setDeviceRotation(plugin, viewer, 1))
+        assert.is_true(close:called())
+        assert.is_true(broadcast:called())
+        assert.equals("SetRotationMode", broadcast:lastCall()[2].name)
+        assert.equals(1, broadcast:lastCall()[2].args[1])
+        assert.is_true(rotated:called())
+        assert.equals(image, show:lastCall()[2])
+        assert.equals(600, show:lastCall()[3].start_point.x)
+        assert.equals(300, show:lastCall()[3].start_point.y)
+        assert.is_true(show:lastCall()[3].buttons_visible)
+
+        UIManager.close, UIManager.broadcastEvent, UIManager.onRotation = old_close, old_broadcast, old_rotation
+    end)
+end)
