@@ -1,13 +1,17 @@
 local Blitbuffer = require("ffi/blitbuffer")
 local Geometry = require("src._geometry")
 local NativeDetector = require("src._nativedetector")
+local ComponentDetector = require("src._componentdetector")
+local PageBitmap = require("src._pagebitmap")
+local Document = require("document/document")
 local PanelViewport = require("src._panelviewport")
 local Settings = require("src._settings")
 local Screen = require("device").screen
 
 --- Panel detection dispatch and lazy image-list construction.
 ---
---- Uses KOReader's native k2pdfopt detector (Deep mode) directly.
+--- Uses the benchmarked component detector, with native detection available
+--- when a document cannot supply a small bitmap.
 ---
 --- @class PPPanelCollectorModule
 local PanelCollector = {}
@@ -146,7 +150,19 @@ local function buildNoCropImage(document, page, rect, page_size, images)
     return image_func, image_rect
 end
 
---- Collect a page's ordered panel rectangles using deep mode (NativeDetector).
+--- A page with no usable panel candidates still belongs in the sequence.
+function PanelCollector.fullPage(document, page)
+    local size = Document.getNativePageDimensions(document, page)
+    if not size and document and document.getPageDimensions then
+        size = document:getPageDimensions(page, 1, 0)
+    end
+    if size and size.w and size.h and size.w > 0 and size.h > 0 then
+        return { { x = 0, y = 0, w = size.w, h = size.h } }
+    end
+    return {}
+end
+
+--- Collect ordered panels, keeping sparse and splash pages as full-page views.
 ---
 --- @param ui table KOReader reader UI object.
 --- @param settings PPSettings Plugin settings.
@@ -154,7 +170,15 @@ end
 --- @param hold_pos PPPagePosition|nil Optional page-space position from the user's hold.
 --- @return PPPanel[] panels Ordered panel rectangles.
 function PanelCollector.collect(ui, settings, page, hold_pos)
-    return NativeDetector.collect(ui, settings, page, hold_pos)
+    local map = PageBitmap.build(ui.document, page, settings)
+    if map then
+        return ComponentDetector.detectPage(map, settings)
+    end
+    local panels = NativeDetector.collect(ui, settings, page, hold_pos)
+    if #panels > 0 then
+        return panels
+    end
+    return PanelCollector.fullPage(ui.document, page)
 end
 
 --- Find the panel index that should open for a hold position.

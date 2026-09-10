@@ -241,7 +241,7 @@ end
 ---
 --- @param detector PPDetector Requested detector.
 function PanelsPlus:setDetector(_detector)
-    self.settings.detector = "exact"
+    self.settings.detector = "components"
     Timing.log(
         "detector -> " .. self.settings.detector .. string.format(" (cache: %d pages)", #(self.panel_cache_order or {}))
     )
@@ -253,7 +253,7 @@ end
 --- reflow-image work completely out of CBZ/CBR/PDF reads.
 --- @param detector PPDetector Requested detector.
 function PanelsPlus:setEmbeddedDetector(_detector)
-    self.settings.embedded_detector = "exact"
+    self.settings.embedded_detector = "components"
     Timing.log("embedded detector -> " .. self.settings.embedded_detector)
     self:saveSettings()
 end

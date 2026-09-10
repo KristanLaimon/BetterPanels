@@ -5,11 +5,11 @@ local _ = require("gettext")
 --- @class PPMenuMethods
 local Menu = {}
 
---- Return the active detector (Deep mode / exact).
+--- Return the active component detector and cache namespace.
 ---
 --- @return PPDetector detector Current detector selection.
 function Menu:getDetector()
-    return "exact"
+    return "components"
 end
 
 --- Return the main-menu label for the current reading mode.

@@ -55,7 +55,7 @@
 --- @field y number Y coordinate on the page.
 
 --- Which detector `PanelCollector.collect` should use.
---- @alias PPDetector '"auto"'|'"fast"'|'"exact"'
+--- @alias PPDetector '"components"'|'"exact"'
 
 --- Panel-to-panel navigation transition style.
 --- @alias PPNavTransitionMode '"classic"'|'"smooth"'

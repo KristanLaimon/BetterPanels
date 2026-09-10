@@ -48,22 +48,22 @@ describe("PanelViewer:getNextTapSide", function()
 end)
 
 describe("PanelViewer:getNextSwipeDirection", function()
-    it("is east in comic mode", function()
+    it("drags west to reveal the next comic panel", function()
         local viewer = PanelViewer:new({ reading_mode = "comic" })
-        assert.equals("east", viewer:getNextSwipeDirection())
+        assert.equals("west", viewer:getNextSwipeDirection())
     end)
 
-    it("is west in manga mode", function()
+    it("drags east to reveal the next manga panel", function()
         local viewer = PanelViewer:new({ reading_mode = "manga" })
-        assert.equals("west", viewer:getNextSwipeDirection())
+        assert.equals("east", viewer:getNextSwipeDirection())
     end)
 
     it("inverts with invert_swipe", function()
         local viewer = PanelViewer:new({ reading_mode = "comic", invert_swipe = true })
-        assert.equals("west", viewer:getNextSwipeDirection())
+        assert.equals("east", viewer:getNextSwipeDirection())
 
         viewer = PanelViewer:new({ reading_mode = "manga", invert_swipe = true })
-        assert.equals("east", viewer:getNextSwipeDirection())
+        assert.equals("west", viewer:getNextSwipeDirection())
     end)
 end)
 
@@ -173,7 +173,7 @@ describe("PanelViewer:onSwipe swipe_navigation toggle", function()
     it("still navigates west/east when swipe_navigation is on (default)", function()
         local viewer = newSwipeViewer()
 
-        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
+        viewer:onSwipe(nil, { direction = "west", pos = { x = 500, y = 400 } })
 
         assert.is_true(viewer.onShowNextImage:called())
         assert.is_false(viewer.onShowPrevImage:called())
@@ -182,21 +182,21 @@ describe("PanelViewer:onSwipe swipe_navigation toggle", function()
     it("navigates to prev on opposite swipe direction", function()
         local viewer = newSwipeViewer()
 
-        viewer:onSwipe(nil, { direction = "west", pos = { x = 500, y = 400 } })
+        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
 
         assert.is_true(viewer.onShowPrevImage:called())
         assert.is_false(viewer.onShowNextImage:called())
     end)
 
-    it("advances west and goes prev east in manga mode", function()
+    it("advances east and goes prev west in manga mode", function()
         local viewer = newSwipeViewer({ reading_mode = "manga" })
 
-        viewer:onSwipe(nil, { direction = "west", pos = { x = 500, y = 400 } })
+        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
         assert.is_true(viewer.onShowNextImage:called())
         assert.is_false(viewer.onShowPrevImage:called())
 
         viewer = newSwipeViewer({ reading_mode = "manga" })
-        viewer:onSwipe(nil, { direction = "east", pos = { x = 500, y = 400 } })
+        viewer:onSwipe(nil, { direction = "west", pos = { x = 500, y = 400 } })
         assert.is_true(viewer.onShowPrevImage:called())
         assert.is_false(viewer.onShowNextImage:called())
     end)

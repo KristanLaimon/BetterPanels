@@ -24,11 +24,10 @@ local Settings = {
         nav_transition_duration = 0.4,
         nav_transition_cross_page = true,
         nav_transition_frames = 8,
-        detector = "exact",
+        detector = "components",
         -- Reflow-image detection has an independent preference, but its
-        -- "exact" choice uses the same K2PDFOpt panel routine as fixed pages
-        -- after adapting the extracted bitmap into a KOPT source.
-        embedded_detector = "exact",
+        -- detector uses the same component pipeline as fixed pages.
+        embedded_detector = "components",
         -- Separate from fixed-layout navigation: embedded-image transitions
         -- use an extracted-bitmap renderer and never document page rendering.
         embedded_nav_transition_mode = "classic",
@@ -82,12 +81,12 @@ local Settings = {
 function Settings.withDefaults(settings)
     settings = settings or {}
     local performance_profile_version = settings.performance_profile_version or 0
-    -- Deep mode ("exact") is the sole detector mode.
-    if settings.detector ~= "exact" then
-        settings.detector = "exact"
+    -- Activate the component pipeline for existing installations as well.
+    if settings.detector ~= "components" then
+        settings.detector = "components"
     end
-    if settings.embedded_detector ~= "exact" then
-        settings.embedded_detector = "exact"
+    if settings.embedded_detector ~= "components" then
+        settings.embedded_detector = "components"
     end
     -- "debug_timing" was renamed "debug_mode" once it started covering memory
     -- logging too, not just pipeline timings.

@@ -5,6 +5,8 @@ local PanelViewport = require("src._panelviewport")
 local PanelViewer = require("src._panelviewer")
 local RenderImage = require("ui/renderimage")
 local NativeDetector = require("src._nativedetector")
+local ComponentDetector = require("src._componentdetector")
+local PageBitmap = require("src._pagebitmap")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
 local UIManager = require("ui/uimanager")
@@ -199,13 +201,22 @@ local function startIndex(panels, point)
     return best_idx
 end
 
---- Detect panels in an image using Deep mode (NativeDetector).
+--- Match fixed-layout detection and retain sparse images in the sequence.
 local function detectPanels(image, settings)
+    local map = PageBitmap.buildFromBlitbuffer(image, settings)
+    if map then
+        local panels = ComponentDetector.detectPage(map, settings)
+        return panels, "components"
+    end
     local native = NativeDetector.collectFromBlitbuffer(image, settings)
     if #native > 0 then
         return native, "exact"
     end
-    return nil, "no panels found"
+    local width, height = dimensions(image)
+    if width and height and width > 0 and height > 0 then
+        return { { x = 0, y = 0, w = width, h = height } }, "full page"
+    end
+    return nil, "invalid image dimensions"
 end
 
 --- Open an already-extracted image. This takes ownership of `image` on

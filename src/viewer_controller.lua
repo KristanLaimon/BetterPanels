@@ -501,7 +501,7 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         crop_mode = self.settings.crop_mode,
         margin_ratio = self.settings.panel_margin_ratio,
         bleed_ratio = self.settings.panel_bleed_ratio,
-        detector = "exact",
+        detector = "components",
         invert_swipe = self.settings.invert_swipe == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
@@ -604,8 +604,14 @@ function ViewerController:resolveBoundaryTarget(direction, current_viewer)
     end
 
     local cached_panels = self:getCachedPanels(next_page)
-    if not cached_panels or #cached_panels == 0 then
+    if not cached_panels then
         return nil
+    end
+    if #cached_panels == 0 then
+        cached_panels = PanelCollector.fullPage(self.ui.document, next_page)
+        if #cached_panels == 0 then
+            return nil
+        end
     end
 
     local start_idx = direction == "next" and 1 or #cached_panels
@@ -682,12 +688,9 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
 
     local cached_panels = self:getCachedPanels(next_page)
     if cached_panels then
-        -- cached, but empty: nothing detected on the adjacent page.
-        current_viewer:onClose()
-        local rotation_mode = Screen:getRotationMode()
-        self.ui:handleEvent(Event:new("GotoPage", next_page))
-        self:restoreDeviceRotation(rotation_mode)
-        self:preloadNextPanels(next_page)
+        -- The full-page fallback above also needs valid native dimensions.
+        -- If the document cannot provide them, keep the current viewer open.
+        current_viewer._panels_plus_boundary_pending = nil
         return true
     end
 
@@ -696,6 +699,9 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
             return
         end
         local loaded_panels = self:collectPanels(next_page)
+        if #loaded_panels == 0 then
+            loaded_panels = PanelCollector.fullPage(self.ui.document, next_page)
+        end
         if #loaded_panels > 0 then
             local rotation_mode = Screen:getRotationMode()
             self.ui:handleEvent(Event:new("GotoPage", next_page))
@@ -704,11 +710,7 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
             local start_idx = direction == "next" and 1 or #loaded_panels
             self:showPanelViewerForPage(next_page, loaded_panels, start_idx)
         else
-            current_viewer:onClose()
-            local rotation_mode = Screen:getRotationMode()
-            self.ui:handleEvent(Event:new("GotoPage", next_page))
-            self:restoreDeviceRotation(rotation_mode)
-            self:preloadNextPanels(next_page)
+            current_viewer._panels_plus_boundary_pending = nil
         end
     end)
     return true
