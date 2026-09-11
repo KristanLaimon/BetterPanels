@@ -293,6 +293,8 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         -- Smooth movement is rendered only from the extracted bitmap. This
         -- leaves the normal document-page renderer untouched.
         nav_transition_mode = self.settings.embedded_nav_transition_mode or "classic",
+        nav_animated_panels = self.settings.nav_animated_panels ~= false,
+        nav_animated_pages = self.settings.nav_animated_pages ~= false,
         nav_transition_duration = self.settings.nav_transition_duration or Settings.defaults.nav_transition_duration,
         nav_transition_cross_page = false,
         nav_transition_frames = self.settings.nav_transition_frames or Settings.defaults.nav_transition_frames,
@@ -342,7 +344,8 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
             return true
         end,
         nav_transition_toggle_callback = function(current_viewer)
-            local next_mode = self.settings.embedded_nav_transition_mode == "smooth" and "classic" or "smooth"
+            local next_mode = { classic = "smooth", smooth = "animated", animated = "classic" }
+            next_mode = next_mode[self.settings.embedded_nav_transition_mode] or "classic"
             self:setEmbeddedNavTransitionMode(next_mode)
             current_viewer.nav_transition_mode = self.settings.embedded_nav_transition_mode
             current_viewer:replaceButtonTable()
@@ -366,6 +369,9 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
         nav_transition_options_callback = function(current_viewer)
             return self:showNavTransitionOptionsMenu(current_viewer)
+        end,
+        panel_animation_callback = function(direction, current_viewer)
+            return self:armPanelTransitionAnimation(direction, current_viewer)
         end,
         image_rotation_callback = function(_, value)
             self:setImageRotation(value)

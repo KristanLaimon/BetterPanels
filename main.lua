@@ -192,12 +192,26 @@ function PanelsPlus:setHoldTextSelection(enabled)
     self:saveSettings()
 end
 
---- Set whether panel-to-panel navigation animates a camera pan or swaps instantly.
+--- Select Classic, Smooth camera-pan, or framebuffer Animated navigation.
 ---
---- @param mode PPNavTransitionMode Requested mode; anything except "smooth" maps to "classic".
+--- @param mode PPNavTransitionMode Requested mode; anything unknown maps to "classic".
 function PanelsPlus:setNavTransitionMode(mode)
-    self.settings.nav_transition_mode = mode == "smooth" and "smooth" or "classic"
+    self.settings.nav_transition_mode = (mode == "smooth" or mode == "animated") and mode or "classic"
     Timing.log("nav_transition_mode -> " .. self.settings.nav_transition_mode)
+    self:saveSettings()
+end
+
+--- Enable or disable framebuffer animation between panels in Animated mode.
+--- @param enabled any Truthy value animates panel-to-panel switches.
+function PanelsPlus:setNavAnimatedPanels(enabled)
+    self.settings.nav_animated_panels = enabled and true or false
+    self:saveSettings()
+end
+
+--- Enable or disable framebuffer animation between pages in Animated mode.
+--- @param enabled any Truthy value animates page-boundary switches.
+function PanelsPlus:setNavAnimatedPages(enabled)
+    self.settings.nav_animated_pages = enabled and true or false
     self:saveSettings()
 end
 
@@ -261,7 +275,7 @@ end
 --- Choose the transition mode used only while viewing an extracted EPUB/KEPUB/MOBI image.
 --- @param mode PPNavTransitionMode Requested mode; anything unknown maps to `"classic"`.
 function PanelsPlus:setEmbeddedNavTransitionMode(mode)
-    self.settings.embedded_nav_transition_mode = mode == "smooth" and "smooth" or "classic"
+    self.settings.embedded_nav_transition_mode = (mode == "smooth" or mode == "animated") and mode or "classic"
     Timing.log("embedded navigation transition -> " .. self.settings.embedded_nav_transition_mode)
     self:saveSettings()
 end

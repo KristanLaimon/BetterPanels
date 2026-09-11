@@ -58,7 +58,7 @@
 --- @alias PPDetector '"components"'|'"exact"'
 
 --- Panel-to-panel navigation transition style.
---- @alias PPNavTransitionMode '"classic"'|'"smooth"'
+--- @alias PPNavTransitionMode '"classic"'|'"smooth"'|'"animated"'
 
 --- Persisted plugin settings.
 --- @class PPSettings
@@ -68,15 +68,15 @@
 --- @field panel_margin_ratio number Zoom-out fraction the "margin" crop mode applies to non-full-page panels.
 --- @field invert_swipe boolean
 --- @field progress_bar_visible boolean
---- @field page_turn_animation_enabled boolean Saved Panels+-specific page animation preference used when sync is disabled.
---- @field page_turn_animation_sync boolean Whether the effective preference follows KOReader's global `swipe_animations` setting.
---- @field nav_transition_mode PPNavTransitionMode Instant swap vs. animated camera pan between panels.
+--- @field nav_transition_mode PPNavTransitionMode Classic, Smooth camera-pan, or framebuffer Animated navigation.
+--- @field nav_animated_panels boolean Whether Animated mode animates panel-to-panel switches.
+--- @field nav_animated_pages boolean Whether Animated mode animates page-boundary switches.
 --- @field nav_transition_duration number Seconds the smooth camera pan takes.
 --- @field nav_transition_cross_page boolean Whether smooth navigation also animates across page boundaries.
 --- @field nav_transition_frames integer Number of discrete steps a smooth camera pan is split into.
 --- @field detector PPDetector
 --- @field embedded_detector PPDetector Bitmap-only detector for embedded EPUB/KEPUB/MOBI images.
---- @field embedded_nav_transition_mode PPNavTransitionMode Bitmap-only smooth navigation mode for embedded EPUB/KEPUB/MOBI images.
+--- @field embedded_nav_transition_mode PPNavTransitionMode Navigation mode for embedded EPUB/KEPUB/MOBI images.
 --- @field panel_grid_cols integer
 --- @field panel_grid_rows integer
 --- @field panel_bleed_ratio number Fraction of extra page area "loose" crop mode reveals around each panel.
@@ -149,8 +149,11 @@
 --- @field swipe_navigation boolean Whether horizontal swipes navigate between panels.
 --- @field more_config_callback fun(viewer:PanelViewer):boolean|nil
 --- @field progress_bar_visible boolean Whether the bottom progress bar is shown.
---- @field nav_transition_mode PPNavTransitionMode Instant swap vs. animated camera pan between panels.
+--- @field nav_transition_mode PPNavTransitionMode Classic, Smooth camera-pan, or framebuffer Animated navigation.
+--- @field nav_animated_panels boolean Whether Animated mode animates panel-to-panel switches.
+--- @field nav_animated_pages boolean Whether Animated mode animates page-boundary switches.
 --- @field nav_transition_duration number Seconds the smooth camera pan takes.
+--- @field panel_animation_callback fun(direction:PPBoundaryDirection, viewer:PanelViewer):boolean|nil
 
 --- A tappable wrapper around one child widget.
 ---

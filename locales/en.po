@@ -33,6 +33,12 @@ msgstr "Always use KOReader's own panel detector. Slower and unable to find pane
 msgid "Animate page-to-page transitions (Actual: "
 msgstr "Animate page-to-page transitions (Actual: "
 
+msgid "Animate between panels (Actual: "
+msgstr "Animate between panels (Actual: "
+
+msgid "Animate between pages (Actual: "
+msgstr "Animate between pages (Actual: "
+
 msgid "Close"
 msgstr "Close"
 
@@ -84,6 +90,9 @@ msgstr "Image rotation (this view only)"
 msgid "Invert panel swipe direction"
 msgstr "Invert panel swipe direction"
 
+msgid "Invert panel swipe direction (Actual: "
+msgstr "Invert panel swipe direction (Actual: "
+
 msgid "Page turn animations (Actual: "
 msgstr "Page turn animations (Actual: "
 
@@ -114,11 +123,17 @@ msgstr "Native panel focusing enabled"
 msgid "Nav. Classic"
 msgstr "Nav. Classic"
 
+msgid "Nav. Animated"
+msgstr "Nav. Animated"
+
 msgid "Nav. Smooth"
 msgstr "Nav. Smooth"
 
 msgid "Navigation Transition Settings"
 msgstr "Navigation Transition Settings"
+
+msgid "Navigation"
+msgstr "Navigation"
 
 msgid "No crop"
 msgstr "No crop"
@@ -174,8 +189,14 @@ msgstr "Panels+: set manga mode"
 msgid "Panels+: toggle panel focusing"
 msgstr "Panels+: toggle panel focusing"
 
+msgid "Performance"
+msgstr "Performance"
+
 msgid "Pre-render next panel"
 msgstr "Pre-render next panel"
+
+msgid "Pre-render next panel (Actual: "
+msgstr "Pre-render next panel (Actual: "
 
 msgid "Quick mode"
 msgstr "Quick mode"
@@ -234,8 +255,14 @@ msgstr "Tap the left or right edge of the screen to move to the previous or next
 msgid "Top-left corner marked. Now tap the bottom-right corner."
 msgstr "Top-left corner marked. Now tap the bottom-right corner."
 
+msgid "Text Selection"
+msgstr "Text Selection"
+
 msgid "Touch & hold text selection in zoom [EXPERIMENTAL]"
 msgstr "Touch & hold text selection in zoom [EXPERIMENTAL]"
+
+msgid "Touch & hold (Actual: "
+msgstr "Touch & hold (Actual: "
 
 msgid "Transition frames (Actual: "
 msgstr "Transition frames (Actual: "

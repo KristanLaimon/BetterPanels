@@ -233,6 +233,11 @@ Both toggles live in the in-viewer **"More config..."** menu
 (`ViewerController:showMoreConfigMenu`), opened from a button next to the
 panel-detection cycle button, rather than the main KOReader settings menu.
 
+The navigation button cycles **Nav. Classic** (instant switches), **Nav.
+Smooth** (camera pans), and **Nav. Animated** (framebuffer transitions).
+Long-pressing Animated exposes independent, default-on switches for animation
+between panels and between pages.
+
 Physical page-turn keys, Bluetooth page-turners (via `kobo.koplugin`'s
 essential actions), the dispatcher's "Turn pages" action, and
 `autoturn.koplugin` all drive panels through the same path as a touch

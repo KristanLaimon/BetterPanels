@@ -33,6 +33,12 @@ msgstr "Usa siempre el detector de paneles de KOReader. Es más lento y no puede
 msgid "Animate page-to-page transitions (Actual: "
 msgstr "Animar las transiciones entre páginas (Actual: "
 
+msgid "Animate between panels (Actual: "
+msgstr "Animar entre paneles (Actual: "
+
+msgid "Animate between pages (Actual: "
+msgstr "Animar entre páginas (Actual: "
+
 msgid "Close"
 msgstr "Cerrar"
 
@@ -84,6 +90,9 @@ msgstr "Rotación de imagen (solo esta vista)"
 msgid "Invert panel swipe direction"
 msgstr "Invertir dirección de deslizamiento"
 
+msgid "Invert panel swipe direction (Actual: "
+msgstr "Invertir dirección de deslizamiento (Actual: "
+
 msgid "Page turn animations (Actual: "
 msgstr "Animaciones de cambio de página (Actual: "
 
@@ -114,11 +123,17 @@ msgstr "Enfoque nativo de paneles activado"
 msgid "Nav. Classic"
 msgstr "Navegación clásica"
 
+msgid "Nav. Animated"
+msgstr "Navegación animada"
+
 msgid "Nav. Smooth"
 msgstr "Navegación suave"
 
 msgid "Navigation Transition Settings"
 msgstr "Ajustes de transición de navegación"
+
+msgid "Navigation"
+msgstr "Navegación"
 
 msgid "No crop"
 msgstr "Sin recorte"
@@ -174,8 +189,14 @@ msgstr "Panels+: activar modo manga"
 msgid "Panels+: toggle panel focusing"
 msgstr "Panels+: activar o desactivar el enfoque de paneles"
 
+msgid "Performance"
+msgstr "Rendimiento"
+
 msgid "Pre-render next panel"
 msgstr "Pre-renderizar el siguiente panel"
+
+msgid "Pre-render next panel (Actual: "
+msgstr "Pre-renderizar el siguiente panel (Actual: "
 
 msgid "Quick mode"
 msgstr "Modo rápido"
@@ -234,8 +255,14 @@ msgstr "Toca el borde izquierdo o derecho de la pantalla para pasar al panel ant
 msgid "Top-left corner marked. Now tap the bottom-right corner."
 msgstr "Esquina superior izquierda marcada. Ahora toca la esquina inferior derecha."
 
+msgid "Text Selection"
+msgstr "Selección de texto"
+
 msgid "Touch & hold text selection in zoom [EXPERIMENTAL]"
 msgstr "Seleccionar texto con pulsación prolongada [EXPERIMENTAL]"
+
+msgid "Touch & hold (Actual: "
+msgstr "Pulsación prolongada (Actual: "
 
 msgid "Transition frames (Actual: "
 msgstr "Fotogramas de transición (Actual: "

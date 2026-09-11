@@ -7,43 +7,19 @@ local Screen = Device.screen
 local UIManager = require("ui/uimanager")
 local PanelCollector = require("src._panelcollector")
 local PanelViewer = require("src._panelviewer")
+local MainMenu = require("src.menu")
+local Settings = require("src._settings")
 local ViewerController = require("src.viewer_controller")
 
 describe("ViewerController page-turn animation settings", function()
     local function withAnimationEnvironment(callback)
-        local old_reader_settings = G_reader_settings
         local old_can_do_swipe_animation = Device.canDoSwipeAnimation
-        local global_enabled = false
-        local global_writes = spy()
-        G_reader_settings = {
-            isTrue = function(_, key)
-                return key == "swipe_animations" and global_enabled
-            end,
-            makeTrue = function(_, key)
-                if key == "swipe_animations" then
-                    global_enabled = true
-                    global_writes(key, true)
-                end
-            end,
-            makeFalse = function(_, key)
-                if key == "swipe_animations" then
-                    global_enabled = false
-                    global_writes(key, false)
-                end
-            end,
-        }
         Device.canDoSwipeAnimation = function()
             return true
         end
 
-        callback({
-            setGlobal = function(enabled)
-                global_enabled = enabled
-            end,
-            globalWrites = global_writes,
-        })
+        callback()
 
-        G_reader_settings = old_reader_settings
         Device.canDoSwipeAnimation = old_can_do_swipe_animation
     end
 
@@ -56,97 +32,109 @@ describe("ViewerController page-turn animation settings", function()
         return controller, saved
     end
 
-    it("follows and updates KOReader while synchronization is enabled", function()
-        withAnimationEnvironment(function(env)
-            local controller, saved = makeController({
-                page_turn_animation_enabled = true,
-                page_turn_animation_sync = true,
-            })
-
-            assert.is_false(controller:getPageTurnAnimationPreference())
-            env.setGlobal(true)
-            assert.is_true(controller:getPageTurnAnimationPreference())
-
-            controller:setPageTurnAnimationEnabled(false)
-            assert.equals(1, env.globalWrites:callCount())
-            assert.equals(false, env.globalWrites:lastCall()[2])
-            assert.is_false(controller.settings.page_turn_animation_enabled)
-            assert.is_true(saved:called())
+    it("animates pages only when Animated mode and its page option are enabled", function()
+        withAnimationEnvironment(function()
+            local controller = makeController({})
+            assert.is_true(controller:isPageTurnAnimationActive({
+                nav_transition_mode = "animated",
+                nav_animated_pages = true,
+            }))
+            assert.is_false(controller:isPageTurnAnimationActive({
+                nav_transition_mode = "animated",
+                nav_animated_pages = false,
+            }))
+            assert.is_false(controller:isPageTurnAnimationActive({
+                nav_transition_mode = "classic",
+                nav_animated_pages = true,
+            }))
         end)
     end)
 
-    it("keeps an independent preference after synchronization is disabled", function()
-        withAnimationEnvironment(function(env)
-            env.setGlobal(true)
-            local controller = makeController({
-                page_turn_animation_enabled = false,
-                page_turn_animation_sync = true,
-            })
-
-            controller:setPageTurnAnimationSync(false)
-            assert.is_false(controller.settings.page_turn_animation_sync)
-            assert.is_true(controller.settings.page_turn_animation_enabled)
-
-            controller:setPageTurnAnimationEnabled(false)
-            assert.equals(0, env.globalWrites:callCount())
-            assert.is_false(controller:getPageTurnAnimationPreference())
-            assert.is_true(G_reader_settings:isTrue("swipe_animations"))
-        end)
+    it("shows two independent boolean options for Animated mode", function()
+        local controller = makeController({ nav_animated_panels = true, nav_animated_pages = true })
+        controller:showNavTransitionOptionsMenu({ nav_transition_mode = "animated" })
+        local items = UIManager._last_shown.item_table
+        assert.equals(2, #items)
+        assert.equals("Animate between panels (Actual: true)", items[1].text)
+        assert.equals("Animate between pages (Actual: true)", items[2].text)
+        assert.is_true(items[1].checked_func())
+        assert.is_true(items[2].checked_func())
     end)
 
-    it("temporarily suppresses the saved preference in Smooth mode", function()
-        withAnimationEnvironment(function(env)
-            env.setGlobal(true)
-            local controller = makeController({
-                page_turn_animation_enabled = true,
-                page_turn_animation_sync = true,
-            })
-
-            assert.is_false(controller:isPageTurnAnimationActive({ nav_transition_mode = "smooth" }))
-            assert.is_true(controller:isPageTurnAnimationActive({ nav_transition_mode = "classic" }))
-            assert.is_true(controller.settings.page_turn_animation_enabled)
-        end)
+    it("defaults both Animated mode options to true", function()
+        local settings = Settings.withDefaults({})
+        assert.is_true(settings.nav_animated_panels)
+        assert.is_true(settings.nav_animated_pages)
     end)
 
-    it("exposes animation and synchronization controls in More config", function()
-        withAnimationEnvironment(function(env)
-            env.setGlobal(true)
+    it("groups all More config items by their prefixed categories", function()
+        withAnimationEnvironment(function()
             local controller = makeController({
                 tap_navigation = false,
                 swipe_navigation = true,
-                page_turn_animation_enabled = true,
-                page_turn_animation_sync = true,
+                invert_swipe = false,
+                panel_prerender = true,
+                hold_text_selection = true,
             })
-            local viewer = { nav_transition_mode = "smooth" }
 
-            controller:showMoreConfigMenu(viewer)
-            local animation_item = UIManager._last_shown.item_table[3]
-            local sync_item = UIManager._last_shown.item_table[4]
-            assert.is_not_nil(animation_item)
-            assert.is_not_nil(sync_item)
-            assert.is_false(animation_item.enabled_func())
-            assert.is_false(animation_item.checked_func())
-            assert.is_true(sync_item.checked_func())
-
-            viewer.nav_transition_mode = "classic"
-            assert.is_true(animation_item.enabled_func())
-            assert.is_true(animation_item.checked_func())
+            controller:showMoreConfigMenu({ nav_transition_mode = "classic" })
+            local items = UIManager._last_shown.item_table
+            assert.equals("[Navigation]: Tap screen sides to navigate (Actual: false)", items[1].text)
+            assert.equals("[Navigation]: Swipe to navigate (Actual: true)", items[2].text)
+            assert.equals("[Navigation]: Invert panel swipe direction (Actual: false)", items[3].text)
+            assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[4].text)
+            assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[5].text)
         end)
+    end)
+
+    it("keeps later groups visible when page animations are unsupported", function()
+        local old_can_do_swipe_animation = Device.canDoSwipeAnimation
+        Device.canDoSwipeAnimation = function()
+            return false
+        end
+        local controller = makeController({
+            tap_navigation = false,
+            swipe_navigation = true,
+            invert_swipe = false,
+            panel_prerender = true,
+            hold_text_selection = true,
+        })
+
+        controller:showMoreConfigMenu({ nav_transition_mode = "classic" })
+        local items = UIManager._last_shown.item_table
+        assert.equals(5, #items)
+        assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[4].text)
+        assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[5].text)
+
+        Device.canDoSwipeAnimation = old_can_do_swipe_animation
+    end)
+
+    it("keeps the moved settings out of the main plugin menu", function()
+        local menu_items = {}
+        MainMenu.addToMainMenu({
+            settings = { mode = "manga" },
+            getModeText = function()
+                return "Panels+"
+            end,
+        }, menu_items)
+
+        local moved = {
+            ["Invert panel swipe direction"] = true,
+            ["Pre-render next panel"] = true,
+            ["Touch & hold text selection in zoom [EXPERIMENTAL]"] = true,
+        }
+        for _, item in ipairs(menu_items.panels_plus.sub_item_table) do
+            assert.is_nil(moved[item.text])
+        end
     end)
 end)
 
 describe("ViewerController native page-turn animation", function()
-    it("arms one screen animation with direction and reading-order support", function()
-        local old_reader_settings = G_reader_settings
+    it("uses Comic and Manga reading flow for panel and page animation direction", function()
         local old_can_do_swipe_animation = Device.canDoSwipeAnimation
         local old_set_animations = Screen.setSwipeAnimations
         local old_set_direction = Screen.setSwipeDirection
         local animations, directions = spy(), spy()
-        G_reader_settings = {
-            isTrue = function()
-                return false
-            end,
-        }
         Device.canDoSwipeAnimation = function()
             return true
         end
@@ -158,26 +146,32 @@ describe("ViewerController native page-turn animation", function()
         end
 
         local controller = setmetatable({
-            settings = {
-                page_turn_animation_enabled = true,
-                page_turn_animation_sync = false,
-            },
-            ui = { view = { inverse_reading_order = false } },
+            settings = {},
+            ui = {},
         }, { __index = ViewerController })
+        local animated_viewer = {
+            nav_transition_mode = "animated",
+            nav_animated_panels = true,
+            nav_animated_pages = true,
+            reading_mode = "comic",
+        }
 
-        assert.is_true(controller:armPageTurnAnimation("next", { nav_transition_mode = "classic" }))
+        assert.is_true(controller:armPageTurnAnimation("next", animated_viewer))
         assert.equals(true, animations:lastCall()[2])
         assert.equals(true, directions:lastCall()[2])
 
-        controller.ui.view.inverse_reading_order = true
-        assert.is_true(controller:armPageTurnAnimation("next", { nav_transition_mode = "classic" }))
+        animated_viewer.reading_mode = "manga"
+        assert.is_true(controller:armPanelTransitionAnimation("next", animated_viewer))
         assert.equals(false, directions:lastCall()[2])
 
+        assert.is_true(controller:armPanelTransitionAnimation("previous", animated_viewer))
+        assert.equals(true, directions:lastCall()[2])
+
         local animation_count = animations:callCount()
-        assert.is_false(controller:armPageTurnAnimation("next", { nav_transition_mode = "smooth" }))
+        animated_viewer.nav_animated_pages = false
+        assert.is_false(controller:armPageTurnAnimation("next", animated_viewer))
         assert.equals(animation_count, animations:callCount())
 
-        G_reader_settings = old_reader_settings
         Device.canDoSwipeAnimation = old_can_do_swipe_animation
         Screen.setSwipeAnimations = old_set_animations
         Screen.setSwipeDirection = old_set_direction
@@ -188,7 +182,7 @@ describe("ViewerController native page-turn animation", function()
         local old_new = PanelViewer.new
         local old_close, old_show = UIManager.close, UIManager.show
         local sequence = {}
-        local source_viewer = { nav_transition_mode = "classic" }
+        local source_viewer = { nav_transition_mode = "animated", nav_animated_pages = true }
         local destination_viewer = {}
 
         PanelCollector.buildImages = function()
@@ -211,7 +205,9 @@ describe("ViewerController native page-turn animation", function()
             settings = {
                 mode = "manga",
                 crop_mode = "strict",
-                nav_transition_mode = "classic",
+                nav_transition_mode = "animated",
+                nav_animated_panels = true,
+                nav_animated_pages = true,
             },
             ui = {},
             armPageTurnAnimation = function(_, direction, viewer)

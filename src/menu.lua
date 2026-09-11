@@ -61,44 +61,7 @@ function Menu:addToMainMenu(menu_items)
                 callback = function()
                     self:setMode("comic")
                 end,
-            },
-            {
-                text = _("Invert panel swipe direction"),
-                checked_func = function()
-                    return self.settings.invert_swipe == true
-                end,
-                callback = function()
-                    self:setInvertSwipe(not self.settings.invert_swipe)
-                end,
-                help_text = _(
-                    "Use this if panel navigation feels reversed on your device. It changes swipe direction only, not panel order."
-                ),
-            },
-            {
-                text = _("Touch & hold text selection in zoom [EXPERIMENTAL]"),
-                checked_func = function()
-                    return self.settings.hold_text_selection ~= false
-                end,
-                callback = function()
-                    self:setHoldTextSelection(self.settings.hold_text_selection == false)
-                end,
-                help_text = _(
-                    "Allow touch and hold on text inside zoomed panels to select text and trigger OCR-based dictionary lookups. On by default; turn off if the OCR word detection misfires often on your comics."
-                ),
                 separator = true,
-            },
-
-            {
-                text = _("Pre-render next panel"),
-                checked_func = function()
-                    return self.settings.panel_prerender ~= false
-                end,
-                callback = function()
-                    self:setPanelPrerender(self.settings.panel_prerender == false)
-                end,
-                help_text = _(
-                    "Render the next panel while you read the current one, so swiping to it is instant. Skipped automatically when the device is low on memory."
-                ),
             },
             {
                 text = _("Enable debugging logs"),

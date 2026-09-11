@@ -56,7 +56,9 @@ end
 --- @field swipe_navigation boolean Whether horizontal swipes navigate between panels.
 --- @field more_config_callback fun(viewer:PanelViewer):boolean|nil
 --- @field progress_bar_visible boolean Whether the bottom progress bar is shown.
---- @field nav_transition_mode PPNavTransitionMode Instant swap vs. animated camera pan between panels.
+--- @field nav_transition_mode PPNavTransitionMode Classic, Smooth camera-pan, or framebuffer Animated navigation.
+--- @field nav_animated_panels boolean Whether Animated mode animates panel-to-panel switches.
+--- @field nav_animated_pages boolean Whether Animated mode animates page-boundary switches.
 --- @field nav_transition_duration number Seconds the smooth camera pan takes.
 --- @field nav_transition_cross_page boolean Whether smooth navigation also animates across page boundaries.
 --- @field nav_transition_frames integer Number of discrete steps a smooth camera pan is split into.
@@ -78,6 +80,7 @@ end
 --- @field nav_transition_duration_callback fun(viewer:PanelViewer, seconds:number):boolean|nil
 --- @field nav_transition_frames_callback fun(viewer:PanelViewer, frames:integer):boolean|nil
 --- @field nav_transition_options_callback fun(viewer:PanelViewer):boolean|nil
+--- @field panel_animation_callback fun(direction:PPBoundaryDirection, viewer:PanelViewer):boolean|nil
 --- @field nav_boundary_peek_callback fun(direction:PPBoundaryDirection, viewer:PanelViewer):PPBoundaryResolution|nil
 --- @field nav_boundary_commit_callback fun(viewer:PanelViewer, direction:PPBoundaryDirection, resolved:PPBoundaryResolution):boolean|nil
 --- @field buttons_visible boolean Whether controls are currently shown.
@@ -100,6 +103,8 @@ local PanelViewer = ImageViewer:extend({
     hold_text_selection = true,
     ocr_debug_mode = false,
     nav_transition_mode = "classic",
+    nav_animated_panels = true,
+    nav_animated_pages = true,
     nav_transition_duration = 0.4,
     nav_transition_cross_page = true,
     nav_transition_frames = NAV_TRANSITION_STEPS_DEFAULT,
@@ -123,6 +128,7 @@ local PanelViewer = ImageViewer:extend({
     nav_transition_frames_callback = nil,
     nav_transition_cross_page_callback = nil,
     nav_transition_options_callback = nil,
+    panel_animation_callback = nil,
     nav_boundary_peek_callback = nil,
     nav_boundary_commit_callback = nil,
     buttons_visible = false,
@@ -427,17 +433,13 @@ end
 
 --- Return which horizontal swipe direction advances to the next panel.
 ---
---- Swiping follows natural reading flow: east (left-to-right) for Comic mode,
---- west (right-to-left) for Manga mode. Tap zones follow the same reading flow.
+--- A next-page-style gesture moves the visible content opposite the reading
+--- flow: west for Comic mode and east for Manga mode.
 ---
 --- @return '"west"'|'"east"' direction Swipe direction treated as next.
 function PanelViewer:getNextSwipeDirection()
     local direction
-    if self.reading_mode == "comic" then
-        direction = "east"
-    else
-        direction = "west"
-    end
+    direction = self.reading_mode == "comic" and "west" or "east"
     if self.invert_swipe then
         return direction == "west" and "east" or "west"
     end
@@ -546,6 +548,13 @@ function PanelViewer:onShowNextImage()
         if self.nav_transition_mode == "smooth" then
             return self:animateSwitchToImageNum(self._images_list_cur + 1)
         end
+        if
+            self.nav_transition_mode == "animated"
+            and self.nav_animated_panels ~= false
+            and self.panel_animation_callback
+        then
+            self.panel_animation_callback("next", self)
+        end
         return ImageViewer.onShowNextImage(self)
     elseif self.boundary_callback then
         return self:onPanelBoundary("next")
@@ -563,6 +572,13 @@ function PanelViewer:onShowPrevImage()
     if self._images_list_cur > 1 then
         if self.nav_transition_mode == "smooth" then
             return self:animateSwitchToImageNum(self._images_list_cur - 1)
+        end
+        if
+            self.nav_transition_mode == "animated"
+            and self.nav_animated_panels ~= false
+            and self.panel_animation_callback
+        then
+            self.panel_animation_callback("previous", self)
         end
         return ImageViewer.onShowPrevImage(self)
     elseif self.boundary_callback then
@@ -1900,6 +1916,8 @@ end
 function PanelViewer:getNavTransitionText()
     if self.nav_transition_mode == "smooth" then
         return _("Nav. Smooth") .. " " .. _("(Long Press)")
+    elseif self.nav_transition_mode == "animated" then
+        return _("Nav. Animated") .. " " .. _("(Long Press)")
     end
     return _("Nav. Classic")
 end
@@ -2136,49 +2154,81 @@ function PanelViewer:onShowNavTransitionOptionsMenu()
     local viewer = self
     local menu
 
-    local menu_items = {
-        {
-            text = _("Pan animation duration..."),
-            callback = function()
-                viewer:onAdjustNavTransitionDuration()
-            end,
-            help_text = _("Adjust how long the camera pan between panels takes in milliseconds."),
-        },
-        {
-            text = _("Animate page-to-page transitions (Actual: ") .. (viewer.nav_transition_cross_page == true and _(
-                "true"
-            ) or _("false")) .. ")",
-            checked_func = function()
-                return viewer.nav_transition_cross_page == true
-            end,
-            callback = function()
-                local new_val = not viewer.nav_transition_cross_page
-                viewer.nav_transition_cross_page = new_val
-                if viewer.nav_transition_cross_page_callback then
-                    viewer.nav_transition_cross_page_callback(viewer, new_val)
-                end
-                UIManager:close(menu)
-                viewer:onShowNavTransitionOptionsMenu()
-            end,
-            help_text = _(
-                "Also pan across the boundary between the last panel of a page and the first panel of the next, instead of cutting instantly. Only animates when the adjacent page has already been detected in the background; otherwise the crossing stays an instant cut."
-            ),
-        },
-        {
-            text = _("Transition frames (Actual: ") .. tostring(
-                viewer.nav_transition_frames or NAV_TRANSITION_STEPS_DEFAULT
-            ) .. _(" fps)"),
-            callback = function()
-                viewer:onAdjustNavTransitionFrames(function()
+    local menu_items
+    if viewer.nav_transition_mode == "animated" then
+        menu_items = {
+            {
+                text = _("Animate between panels (Actual: ")
+                    .. (viewer.nav_animated_panels ~= false and _("true") or _("false"))
+                    .. ")",
+                checked_func = function()
+                    return viewer.nav_animated_panels ~= false
+                end,
+                callback = function()
+                    viewer.nav_animated_panels = viewer.nav_animated_panels == false
                     UIManager:close(menu)
                     viewer:onShowNavTransitionOptionsMenu()
-                end)
-            end,
-            help_text = _(
-                "How many discrete steps the smooth camera pan between panels is split into. More frames look smoother but schedule more work per transition."
-            ),
-        },
-    }
+                end,
+            },
+            {
+                text = _("Animate between pages (Actual: ") .. (viewer.nav_animated_pages ~= false and _("true") or _(
+                    "false"
+                )) .. ")",
+                checked_func = function()
+                    return viewer.nav_animated_pages ~= false
+                end,
+                callback = function()
+                    viewer.nav_animated_pages = viewer.nav_animated_pages == false
+                    UIManager:close(menu)
+                    viewer:onShowNavTransitionOptionsMenu()
+                end,
+            },
+        }
+    else
+        menu_items = {
+            {
+                text = _("Pan animation duration..."),
+                callback = function()
+                    viewer:onAdjustNavTransitionDuration()
+                end,
+                help_text = _("Adjust how long the camera pan between panels takes in milliseconds."),
+            },
+            {
+                text = _("Animate page-to-page transitions (Actual: ")
+                    .. (viewer.nav_transition_cross_page == true and _("true") or _("false"))
+                    .. ")",
+                checked_func = function()
+                    return viewer.nav_transition_cross_page == true
+                end,
+                callback = function()
+                    local new_val = not viewer.nav_transition_cross_page
+                    viewer.nav_transition_cross_page = new_val
+                    if viewer.nav_transition_cross_page_callback then
+                        viewer.nav_transition_cross_page_callback(viewer, new_val)
+                    end
+                    UIManager:close(menu)
+                    viewer:onShowNavTransitionOptionsMenu()
+                end,
+                help_text = _(
+                    "Also pan across the boundary between the last panel of a page and the first panel of the next, instead of cutting instantly. Only animates when the adjacent page has already been detected in the background; otherwise the crossing stays an instant cut."
+                ),
+            },
+            {
+                text = _("Transition frames (Actual: ") .. tostring(
+                    viewer.nav_transition_frames or NAV_TRANSITION_STEPS_DEFAULT
+                ) .. _(" fps)"),
+                callback = function()
+                    viewer:onAdjustNavTransitionFrames(function()
+                        UIManager:close(menu)
+                        viewer:onShowNavTransitionOptionsMenu()
+                    end)
+                end,
+                help_text = _(
+                    "How many discrete steps the smooth camera pan between panels is split into. More frames look smoother but schedule more work per transition."
+                ),
+            },
+        }
+    end
 
     menu = Menu:new({
         title = _("Navigation Transition Settings"),
@@ -2376,13 +2426,14 @@ function PanelViewer:replaceButtonTable()
                     if self.nav_transition_toggle_callback then
                         self.nav_transition_toggle_callback(self)
                     else
-                        self.nav_transition_mode = self.nav_transition_mode == "smooth" and "classic" or "smooth"
+                        local next_mode = { classic = "smooth", smooth = "animated", animated = "classic" }
+                        self.nav_transition_mode = next_mode[self.nav_transition_mode] or "classic"
                         self:replaceButtonTable()
                         self:update()
                     end
                 end,
                 hold_callback = function()
-                    if self.nav_transition_mode == "smooth" then
+                    if self.nav_transition_mode == "smooth" or self.nav_transition_mode == "animated" then
                         if self.nav_transition_options_callback then
                             self.nav_transition_options_callback(self)
                         else

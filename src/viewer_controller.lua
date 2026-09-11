@@ -274,7 +274,8 @@ end
 --- @param viewer PanelViewer Active panel viewer instance.
 --- @return boolean handled Always true for viewer callback dispatch.
 function ViewerController:toggleViewerNavTransitionMode(viewer)
-    self:setNavTransitionMode(self.settings.nav_transition_mode == "smooth" and "classic" or "smooth")
+    local next_mode = { classic = "smooth", smooth = "animated", animated = "classic" }
+    self:setNavTransitionMode(next_mode[self.settings.nav_transition_mode] or "classic")
     viewer.nav_transition_mode = self.settings.nav_transition_mode
     viewer:replaceButtonTable()
     viewer:update()
@@ -313,50 +314,84 @@ function ViewerController:showNavTransitionOptionsMenu(viewer)
     local controller = self
     local menu
 
-    local menu_items = {
-        {
-            text = _("Pan animation duration..."),
-            callback = function()
-                viewer:onAdjustNavTransitionDuration()
-            end,
-            help_text = _("Adjust how long the camera pan between panels takes in milliseconds."),
-        },
-        {
-            text = _("Animate page-to-page transitions (Actual: ")
-                .. (controller.settings.nav_transition_cross_page == true and _("true") or _("false"))
-                .. ")",
-            checked_func = function()
-                return controller.settings.nav_transition_cross_page == true
-            end,
-            callback = function()
-                controller:setNavTransitionCrossPage(not controller.settings.nav_transition_cross_page)
-                viewer.nav_transition_cross_page = controller.settings.nav_transition_cross_page
-                -- Rebuild the menu so the "(Actual: ...)" label in the text
-                -- reflects the new value immediately, not just the checkmark.
-                UIManager:close(menu)
-                controller:showNavTransitionOptionsMenu(viewer)
-            end,
-            help_text = _(
-                "Also pan across the boundary between the last panel of a page and the first panel of the next, instead of cutting instantly. Only animates when the adjacent page has already been detected in the background; otherwise the crossing stays an instant cut."
-            ),
-        },
-        {
-            text = _("Transition frames (Actual: ")
-                .. tostring(controller.settings.nav_transition_frames or Settings.defaults.nav_transition_frames)
-                .. _(" fps)"),
-            callback = function()
-                viewer:onAdjustNavTransitionFrames(function()
-                    -- Rebuild the menu so the "(Actual: ...)" label in the
-                    -- text reflects the new value immediately.
+    local menu_items
+    if viewer.nav_transition_mode == "animated" then
+        menu_items = {
+            {
+                text = _("Animate between panels (Actual: ")
+                    .. (controller.settings.nav_animated_panels ~= false and _("true") or _("false"))
+                    .. ")",
+                checked_func = function()
+                    return controller.settings.nav_animated_panels ~= false
+                end,
+                callback = function()
+                    controller:setNavAnimatedPanels(controller.settings.nav_animated_panels == false)
+                    viewer.nav_animated_panels = controller.settings.nav_animated_panels
                     UIManager:close(menu)
                     controller:showNavTransitionOptionsMenu(viewer)
-                end)
-            end,
-            help_text = _(
-                "How many discrete steps the smooth camera pan between panels is split into. More frames look smoother but schedule more work per transition."
-            ),
-        },
-    }
+                end,
+            },
+            {
+                text = _("Animate between pages (Actual: ") .. (controller.settings.nav_animated_pages ~= false and _(
+                    "true"
+                ) or _("false")) .. ")",
+                checked_func = function()
+                    return controller.settings.nav_animated_pages ~= false
+                end,
+                callback = function()
+                    controller:setNavAnimatedPages(controller.settings.nav_animated_pages == false)
+                    viewer.nav_animated_pages = controller.settings.nav_animated_pages
+                    UIManager:close(menu)
+                    controller:showNavTransitionOptionsMenu(viewer)
+                end,
+            },
+        }
+    else
+        menu_items = {
+            {
+                text = _("Pan animation duration..."),
+                callback = function()
+                    viewer:onAdjustNavTransitionDuration()
+                end,
+                help_text = _("Adjust how long the camera pan between panels takes in milliseconds."),
+            },
+            {
+                text = _("Animate page-to-page transitions (Actual: ")
+                    .. (controller.settings.nav_transition_cross_page == true and _("true") or _("false"))
+                    .. ")",
+                checked_func = function()
+                    return controller.settings.nav_transition_cross_page == true
+                end,
+                callback = function()
+                    controller:setNavTransitionCrossPage(not controller.settings.nav_transition_cross_page)
+                    viewer.nav_transition_cross_page = controller.settings.nav_transition_cross_page
+                    -- Rebuild the menu so the "(Actual: ...)" label in the text
+                    -- reflects the new value immediately, not just the checkmark.
+                    UIManager:close(menu)
+                    controller:showNavTransitionOptionsMenu(viewer)
+                end,
+                help_text = _(
+                    "Also pan across the boundary between the last panel of a page and the first panel of the next, instead of cutting instantly. Only animates when the adjacent page has already been detected in the background; otherwise the crossing stays an instant cut."
+                ),
+            },
+            {
+                text = _("Transition frames (Actual: ")
+                    .. tostring(controller.settings.nav_transition_frames or Settings.defaults.nav_transition_frames)
+                    .. _(" fps)"),
+                callback = function()
+                    viewer:onAdjustNavTransitionFrames(function()
+                        -- Rebuild the menu so the "(Actual: ...)" label in the
+                        -- text reflects the new value immediately.
+                        UIManager:close(menu)
+                        controller:showNavTransitionOptionsMenu(viewer)
+                    end)
+                end,
+                help_text = _(
+                    "How many discrete steps the smooth camera pan between panels is split into. More frames look smoother but schedule more work per transition."
+                ),
+            },
+        }
+    end
 
     menu = Menu:new({
         title = _("Navigation Transition Settings"),
@@ -388,65 +423,51 @@ function ViewerController:toggleViewerSwipeNavigation(viewer)
     return true
 end
 
---- Return the saved page-turn preference, following KOReader live when sync
---- is enabled. Keeping the global setting as the parent means a change made
---- in KOReader is reflected without reopening or rewriting Panels+ settings.
-function ViewerController:getPageTurnAnimationPreference()
-    if self.settings.page_turn_animation_sync ~= false then
-        return G_reader_settings:isTrue("swipe_animations")
-    end
-    return self.settings.page_turn_animation_enabled == true
-end
-
---- Persist the page-turn preference. In synchronized mode this also changes
---- KOReader's parent setting; otherwise it remains local to Panels+.
-function ViewerController:setPageTurnAnimationEnabled(enabled)
-    enabled = enabled and true or false
-    self.settings.page_turn_animation_enabled = enabled
-    if self.settings.page_turn_animation_sync ~= false then
-        if enabled then
-            G_reader_settings:makeTrue("swipe_animations")
-        else
-            G_reader_settings:makeFalse("swipe_animations")
-        end
-    end
-    self:saveSettings()
-end
-
---- Enable or disable following KOReader's global animation preference. Both
---- transitions snapshot the current parent value, giving independent mode a
---- predictable starting point and leaving a useful fallback if sync is later
---- disabled again.
-function ViewerController:setPageTurnAnimationSync(enabled)
-    self.settings.page_turn_animation_enabled = G_reader_settings:isTrue("swipe_animations")
-    self.settings.page_turn_animation_sync = enabled and true or false
-    self:saveSettings()
-end
-
---- Return whether a native page turn should play for this viewer. Smooth
---- camera navigation and hardware page animation both animate the same
---- boundary, so Smooth temporarily suppresses the latter without erasing the
---- saved preference; Classic automatically restores it.
+--- Return whether Animated mode should play a framebuffer page transition.
 function ViewerController:isPageTurnAnimationActive(viewer)
     return Device:canDoSwipeAnimation()
-        and (not viewer or viewer.nav_transition_mode ~= "smooth")
-        and self:getPageTurnAnimationPreference()
+        and viewer
+        and viewer.nav_transition_mode == "animated"
+        and viewer.nav_animated_pages ~= false
 end
 
---- Arm one hardware page animation for the next framebuffer refresh.
---- ReaderPaging (PDF/CBZ/CBR) does not emit KOReader's PageChangeAnimation
---- event, and an independent Panels+ preference may intentionally differ
---- from KOReader's, so use the same Screen API directly.
+--- Return the physical direction expected by KOReader's framebuffer API.
+--- `true` moves left (right-to-left); `false` moves right (left-to-right).
+--- Forward Comic navigation moves left, while forward Manga navigation moves
+--- right. Previous navigation reverses the matching direction.
+local function animatedTransitionMovesLeft(direction, viewer)
+    local moves_left = viewer.reading_mode == "comic"
+    if direction == "previous" then
+        moves_left = not moves_left
+    end
+    return moves_left
+end
+
+--- Arm one framebuffer page animation for the next refresh in Animated mode.
 function ViewerController:armPageTurnAnimation(direction, viewer)
     if not self:isPageTurnAnimationActive(viewer) then
         return false
     end
-    local forward = direction == "next"
-    if self.ui and self.ui.view and self.ui.view.inverse_reading_order then
-        forward = not forward
+    Screen:setSwipeAnimations(true)
+    Screen:setSwipeDirection(animatedTransitionMovesLeft(direction, viewer))
+    return true
+end
+
+--- Arm one framebuffer animation for a panel-to-panel switch in Animated mode.
+--- @param direction PPBoundaryDirection `"next"` or `"previous"`.
+--- @param viewer PanelViewer Active panel viewer.
+--- @return boolean armed Whether an animation was armed.
+function ViewerController:armPanelTransitionAnimation(direction, viewer)
+    if
+        not Device:canDoSwipeAnimation()
+        or not viewer
+        or viewer.nav_transition_mode ~= "animated"
+        or viewer.nav_animated_panels == false
+    then
+        return false
     end
     Screen:setSwipeAnimations(true)
-    Screen:setSwipeDirection(forward)
+    Screen:setSwipeDirection(animatedTransitionMovesLeft(direction, viewer))
     return true
 end
 
@@ -461,13 +482,18 @@ function ViewerController:showMoreConfigMenu(viewer)
     local controller = self
     local menu
 
-    local page_turn_active = controller:isPageTurnAnimationActive(viewer)
-    local page_turn_synced = controller.settings.page_turn_animation_sync ~= false
+    local function categorizedText(category, label)
+        return "[" .. category .. "]: " .. label
+    end
+
     local menu_items = {
         {
-            text = _("Tap screen sides to navigate (Actual: ") .. (controller.settings.tap_navigation == true and _(
-                "true"
-            ) or _("false")) .. ")",
+            text = categorizedText(
+                _("Navigation"),
+                _("Tap screen sides to navigate (Actual: ")
+                    .. (controller.settings.tap_navigation == true and _("true") or _("false"))
+                    .. ")"
+            ),
             checked_func = function()
                 return controller.settings.tap_navigation == true
             end,
@@ -481,9 +507,12 @@ function ViewerController:showMoreConfigMenu(viewer)
             ),
         },
         {
-            text = _("Swipe to navigate (Actual: ")
-                .. (controller.settings.swipe_navigation ~= false and _("true") or _("false"))
-                .. ")",
+            text = categorizedText(
+                _("Navigation"),
+                _("Swipe to navigate (Actual: ")
+                    .. (controller.settings.swipe_navigation ~= false and _("true") or _("false"))
+                    .. ")"
+            ),
             checked_func = function()
                 return controller.settings.swipe_navigation ~= false
             end,
@@ -496,44 +525,71 @@ function ViewerController:showMoreConfigMenu(viewer)
                 "Swipe left/right to move between panels. Turning this off leaves panel navigation to taps, buttons, or physical page-turn keys only."
             ),
         },
-        Device:canDoSwipeAnimation()
-                and {
-                    text = _("Page turn animations (Actual: ") .. (page_turn_active and _("true") or _("false")) .. ")",
-                    enabled_func = function()
-                        return viewer.nav_transition_mode ~= "smooth"
-                    end,
-                    checked_func = function()
-                        return viewer.nav_transition_mode ~= "smooth" and controller:getPageTurnAnimationPreference()
-                    end,
-                    callback = function()
-                        controller:setPageTurnAnimationEnabled(not controller:getPageTurnAnimationPreference())
-                        UIManager:close(menu)
-                        controller:showMoreConfigMenu(viewer)
-                    end,
-                    help_text = _(
-                        "Animate page boundaries in PDF, CBZ, CBR, and embedded-image documents. Smooth navigation temporarily disables this animation because the two effects are incompatible; returning to Classic restores the saved preference."
-                    ),
-                }
-            or nil,
-        Device:canDoSwipeAnimation()
-                and {
-                    text = _("Sync page animations with KOReader (Actual: ") .. (page_turn_synced and _("true") or _(
-                        "false"
-                    )) .. ")",
-                    checked_func = function()
-                        return controller.settings.page_turn_animation_sync ~= false
-                    end,
-                    callback = function()
-                        controller:setPageTurnAnimationSync(controller.settings.page_turn_animation_sync == false)
-                        UIManager:close(menu)
-                        controller:showMoreConfigMenu(viewer)
-                    end,
-                    help_text = _(
-                        "When enabled, Panels+ follows KOReader's global Page turn animations setting and changes made here update KOReader too. Disable sync to keep an independent Panels+ on/off preference."
-                    ),
-                }
-            or nil,
+        {
+            text = categorizedText(
+                _("Navigation"),
+                _("Invert panel swipe direction (Actual: ")
+                    .. (controller.settings.invert_swipe == true and _("true") or _("false"))
+                    .. ")"
+            ),
+            checked_func = function()
+                return controller.settings.invert_swipe == true
+            end,
+            callback = function()
+                controller:setInvertSwipe(not controller.settings.invert_swipe)
+                viewer.invert_swipe = controller.settings.invert_swipe
+                UIManager:close(menu)
+                controller:showMoreConfigMenu(viewer)
+            end,
+            help_text = _(
+                "Use this if panel navigation feels reversed on your device. It changes swipe direction only, not panel order."
+            ),
+            separator = true,
+        },
     }
+
+    table.insert(menu_items, {
+        text = categorizedText(
+            _("Performance"),
+            _("Pre-render next panel (Actual: ")
+                .. (controller.settings.panel_prerender ~= false and _("true") or _("false"))
+                .. ")"
+        ),
+        checked_func = function()
+            return controller.settings.panel_prerender ~= false
+        end,
+        callback = function()
+            controller:setPanelPrerender(controller.settings.panel_prerender == false)
+            UIManager:close(menu)
+            controller:showMoreConfigMenu(viewer)
+        end,
+        help_text = _(
+            "Render the next panel while you read the current one, so swiping to it is instant. Skipped automatically when the device is low on memory."
+        ),
+        separator = true,
+    })
+    table.insert(menu_items, {
+        text = categorizedText(
+            _("Text Selection"),
+            _("Touch & hold (Actual: ")
+                .. (controller.settings.hold_text_selection ~= false and _("true") or _("false"))
+                .. ")"
+        ),
+        checked_func = function()
+            return controller.settings.hold_text_selection ~= false
+        end,
+        callback = function()
+            controller:setHoldTextSelection(controller.settings.hold_text_selection == false)
+            if not viewer.embedded_source_image then
+                viewer.hold_text_selection = controller.settings.hold_text_selection
+            end
+            UIManager:close(menu)
+            controller:showMoreConfigMenu(viewer)
+        end,
+        help_text = _(
+            "Allow touch and hold on text inside zoomed panels to select text and trigger OCR-based dictionary lookups. On by default; turn off if the OCR word detection misfires often on your comics."
+        ),
+    })
 
     menu = Menu:new({
         title = _("More Panel Viewer Settings"),
@@ -613,6 +669,8 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         ocr_debug_mode = self.settings.ocr_debug_mode == true,
         image_rotation = self.settings.image_rotation,
         nav_transition_mode = self.settings.nav_transition_mode or "classic",
+        nav_animated_panels = self.settings.nav_animated_panels ~= false,
+        nav_animated_pages = self.settings.nav_animated_pages ~= false,
         nav_transition_duration = self.settings.nav_transition_duration or Settings.defaults.nav_transition_duration,
         nav_transition_cross_page = self.settings.nav_transition_cross_page == true,
         nav_transition_frames = self.settings.nav_transition_frames or Settings.defaults.nav_transition_frames,
@@ -651,6 +709,9 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         end,
         nav_transition_options_callback = function(current_viewer)
             return self:showNavTransitionOptionsMenu(current_viewer)
+        end,
+        panel_animation_callback = function(direction, current_viewer)
+            return self:armPanelTransitionAnimation(direction, current_viewer)
         end,
         nav_boundary_peek_callback = function(direction, current_viewer)
             return self:resolveBoundaryTarget(direction, current_viewer)

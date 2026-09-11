@@ -32,6 +32,10 @@ All notable changes to the **Panels+** KOReader plugin are documented in this fi
 
 ### Added
 
+- **Nav. Animated mode**
+  - Cycles alongside Classic and Smooth and uses KOReader's framebuffer transition between panels and page boundaries.
+  - Long-pressing the mode opens independent **Animate between panels** and **Animate between pages** toggles, both enabled by default.
+
 - **KEPUB embedded-image compatibility**
   - Panels+ now explicitly accepts direct `.kepub` files in the same rolling-reader embedded-image path as EPUB and MOBI. Kobo-synced `.kepub.epub` books remain supported through their EPUB suffix, and a regression test covers both Kobo naming conventions.
 
