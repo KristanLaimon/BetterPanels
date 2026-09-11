@@ -20,6 +20,10 @@ local Settings = {
         swipe_navigation = true,
         progress_bar_visible = true,
         hold_text_selection = true,
+        -- Follow KOReader by default, preserving the behavior users already
+        -- had before Panels+ exposed an independent override.
+        page_turn_animation_enabled = true,
+        page_turn_animation_sync = true,
         nav_transition_mode = "classic",
         nav_transition_duration = 0.4,
         nav_transition_cross_page = true,

@@ -156,14 +156,15 @@ describe("EmbeddedImage native page animation", function()
         UIManager.close = function() end
         UIManager.show = function() end
 
-        local events = spy()
+        local arm_animation = spy()
         local plugin = {
             settings = {
                 mode = "manga",
                 crop_mode = "strict",
                 embedded_nav_transition_mode = "classic",
             },
-            ui = { handleEvent = events },
+            ui = {},
+            armPageTurnAnimation = arm_animation,
         }
         local function image()
             return {
@@ -176,15 +177,16 @@ describe("EmbeddedImage native page animation", function()
         end
 
         assert.is_true(EmbeddedImage.showEmbeddedImagePanelsForImage(plugin, image()))
-        assert.is_false(events:called(), "initial opens must not look like page turns")
+        assert.is_false(arm_animation:called(), "initial opens must not look like page turns")
 
+        local source_viewer = {}
         assert.is_true(EmbeddedImage.showEmbeddedImagePanelsForImage(plugin, image(), {
-            replace_viewer = {},
+            replace_viewer = source_viewer,
             boundary_direction = "next",
         }))
-        assert.equals(1, events:callCount())
-        assert.equals("PageChangeAnimation", events:lastCall()[2].name)
-        assert.equals(true, events:lastCall()[2].args[1])
+        assert.equals(1, arm_animation:callCount())
+        assert.equals("next", arm_animation:lastCall()[2])
+        assert.equals(source_viewer, arm_animation:lastCall()[3])
 
         PageBitmap.buildFromBlitbuffer = old_build
         ComponentDetector.detectPage = old_detect

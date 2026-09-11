@@ -1,5 +1,6 @@
 local Event = require("ui/event")
-local Screen = require("device").screen
+local Device = require("device")
+local Screen = Device.screen
 local Memory = require("src._memory")
 local PanelCollector = require("src._panelcollector")
 local PanelViewer = require("src._panelviewer")
@@ -387,6 +388,68 @@ function ViewerController:toggleViewerSwipeNavigation(viewer)
     return true
 end
 
+--- Return the saved page-turn preference, following KOReader live when sync
+--- is enabled. Keeping the global setting as the parent means a change made
+--- in KOReader is reflected without reopening or rewriting Panels+ settings.
+function ViewerController:getPageTurnAnimationPreference()
+    if self.settings.page_turn_animation_sync ~= false then
+        return G_reader_settings:isTrue("swipe_animations")
+    end
+    return self.settings.page_turn_animation_enabled == true
+end
+
+--- Persist the page-turn preference. In synchronized mode this also changes
+--- KOReader's parent setting; otherwise it remains local to Panels+.
+function ViewerController:setPageTurnAnimationEnabled(enabled)
+    enabled = enabled and true or false
+    self.settings.page_turn_animation_enabled = enabled
+    if self.settings.page_turn_animation_sync ~= false then
+        if enabled then
+            G_reader_settings:makeTrue("swipe_animations")
+        else
+            G_reader_settings:makeFalse("swipe_animations")
+        end
+    end
+    self:saveSettings()
+end
+
+--- Enable or disable following KOReader's global animation preference. Both
+--- transitions snapshot the current parent value, giving independent mode a
+--- predictable starting point and leaving a useful fallback if sync is later
+--- disabled again.
+function ViewerController:setPageTurnAnimationSync(enabled)
+    self.settings.page_turn_animation_enabled = G_reader_settings:isTrue("swipe_animations")
+    self.settings.page_turn_animation_sync = enabled and true or false
+    self:saveSettings()
+end
+
+--- Return whether a native page turn should play for this viewer. Smooth
+--- camera navigation and hardware page animation both animate the same
+--- boundary, so Smooth temporarily suppresses the latter without erasing the
+--- saved preference; Classic automatically restores it.
+function ViewerController:isPageTurnAnimationActive(viewer)
+    return Device:canDoSwipeAnimation()
+        and (not viewer or viewer.nav_transition_mode ~= "smooth")
+        and self:getPageTurnAnimationPreference()
+end
+
+--- Arm one hardware page animation for the next framebuffer refresh.
+--- ReaderPaging (PDF/CBZ/CBR) does not emit KOReader's PageChangeAnimation
+--- event, and an independent Panels+ preference may intentionally differ
+--- from KOReader's, so use the same Screen API directly.
+function ViewerController:armPageTurnAnimation(direction, viewer)
+    if not self:isPageTurnAnimationActive(viewer) then
+        return false
+    end
+    local forward = direction == "next"
+    if self.ui and self.ui.view and self.ui.view.inverse_reading_order then
+        forward = not forward
+    end
+    Screen:setSwipeAnimations(true)
+    Screen:setSwipeDirection(forward)
+    return true
+end
+
 --- Show a multi-options menu popup for miscellaneous panel viewer settings
 --- that don't need their own dedicated button.
 ---
@@ -398,6 +461,8 @@ function ViewerController:showMoreConfigMenu(viewer)
     local controller = self
     local menu
 
+    local page_turn_active = controller:isPageTurnAnimationActive(viewer)
+    local page_turn_synced = controller.settings.page_turn_animation_sync ~= false
     local menu_items = {
         {
             text = _("Tap screen sides to navigate (Actual: ") .. (controller.settings.tap_navigation == true and _(
@@ -431,6 +496,43 @@ function ViewerController:showMoreConfigMenu(viewer)
                 "Swipe left/right to move between panels. Turning this off leaves panel navigation to taps, buttons, or physical page-turn keys only."
             ),
         },
+        Device:canDoSwipeAnimation()
+                and {
+                    text = _("Page turn animations (Actual: ") .. (page_turn_active and _("true") or _("false")) .. ")",
+                    enabled_func = function()
+                        return viewer.nav_transition_mode ~= "smooth"
+                    end,
+                    checked_func = function()
+                        return viewer.nav_transition_mode ~= "smooth" and controller:getPageTurnAnimationPreference()
+                    end,
+                    callback = function()
+                        controller:setPageTurnAnimationEnabled(not controller:getPageTurnAnimationPreference())
+                        UIManager:close(menu)
+                        controller:showMoreConfigMenu(viewer)
+                    end,
+                    help_text = _(
+                        "Animate page boundaries in PDF, CBZ, CBR, and embedded-image documents. Smooth navigation temporarily disables this animation because the two effects are incompatible; returning to Classic restores the saved preference."
+                    ),
+                }
+            or nil,
+        Device:canDoSwipeAnimation()
+                and {
+                    text = _("Sync page animations with KOReader (Actual: ") .. (page_turn_synced and _("true") or _(
+                        "false"
+                    )) .. ")",
+                    checked_func = function()
+                        return controller.settings.page_turn_animation_sync ~= false
+                    end,
+                    callback = function()
+                        controller:setPageTurnAnimationSync(controller.settings.page_turn_animation_sync == false)
+                        UIManager:close(menu)
+                        controller:showMoreConfigMenu(viewer)
+                    end,
+                    help_text = _(
+                        "When enabled, Panels+ follows KOReader's global Page turn animations setting and changes made here update KOReader too. Disable sync to keep an independent Panels+ on/off preference."
+                    ),
+                }
+            or nil,
     }
 
     menu = Menu:new({
@@ -567,6 +669,10 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         end,
     })
 
+    if options.replace_viewer then
+        self:armPageTurnAnimation(options.boundary_direction, options.replace_viewer)
+        UIManager:close(options.replace_viewer)
+    end
     UIManager:show(viewer)
     if start_idx and start_idx > 1 then
         viewer:switchToImageNum(start_idx)
@@ -649,9 +755,11 @@ function ViewerController:commitBoundaryTransition(direction, current_viewer, re
         resolved.start_idx
     )
     self.ui:handleEvent(Event:new("GotoPage", resolved.next_page))
-    UIManager:close(current_viewer)
     self:restoreDeviceRotation(rotation_mode)
-    return self:showPanelViewerForPage(resolved.next_page, resolved.panels, resolved.start_idx)
+    return self:showPanelViewerForPage(resolved.next_page, resolved.panels, resolved.start_idx, {
+        replace_viewer = current_viewer,
+        boundary_direction = direction,
+    })
 end
 
 --- Move to the adjacent page when panel navigation crosses viewer boundaries.
@@ -706,10 +814,12 @@ function ViewerController:onPanelViewerBoundary(direction, current_viewer)
         if #loaded_panels > 0 then
             local rotation_mode = Screen:getRotationMode()
             self.ui:handleEvent(Event:new("GotoPage", next_page))
-            UIManager:close(current_viewer)
             self:restoreDeviceRotation(rotation_mode)
             local start_idx = direction == "next" and 1 or #loaded_panels
-            self:showPanelViewerForPage(next_page, loaded_panels, start_idx)
+            self:showPanelViewerForPage(next_page, loaded_panels, start_idx, {
+                replace_viewer = current_viewer,
+                boundary_direction = direction,
+            })
         else
             current_viewer._panels_plus_boundary_pending = nil
         end

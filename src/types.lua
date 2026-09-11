@@ -68,6 +68,8 @@
 --- @field panel_margin_ratio number Zoom-out fraction the "margin" crop mode applies to non-full-page panels.
 --- @field invert_swipe boolean
 --- @field progress_bar_visible boolean
+--- @field page_turn_animation_enabled boolean Saved Panels+-specific page animation preference used when sync is disabled.
+--- @field page_turn_animation_sync boolean Whether the effective preference follows KOReader's global `swipe_animations` setting.
 --- @field nav_transition_mode PPNavTransitionMode Instant swap vs. animated camera pan between panels.
 --- @field nav_transition_duration number Seconds the smooth camera pan takes.
 --- @field nav_transition_cross_page boolean Whether smooth navigation also animates across page boundaries.
@@ -116,6 +118,8 @@
 --- @field buttons_visible boolean|nil Show viewer controls immediately.
 --- @field defer_preload boolean|nil Skip next-page prefetch when true.
 --- @field return_viewer boolean|nil Return the viewer instance instead of `true`.
+--- @field replace_viewer PanelViewer|nil Existing viewer to replace after the destination viewer has been constructed.
+--- @field boundary_direction PPBoundaryDirection|nil Page-turn direction used to arm a native animation during replacement.
 
 --- KOReader ImageViewer lazy image list.
 --- @class PPImageList : table

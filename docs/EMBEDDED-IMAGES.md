@@ -56,12 +56,23 @@ pages. This prevents one large EPUB/KEPUB/MOBI image from staying resident throu
 an arbitrarily long search. Intermediate reader-page turns also cancel
 KOReader's one-shot hardware page animation. Once the destination image and
 its first (or last) panel are ready, Panels+ arms one normal page-change
-animation immediately before replacing the viewer. Consequently, devices with
-KOReader's **Page turn animations** enabled animate directly from the current
-panel to the destination panel exactly once; devices with that option disabled
-keep the same instant handoff.
+animation immediately before replacing the viewer. Consequently, supported
+devices animate directly from the current panel to the destination panel
+exactly once. The same boundary animation is also supplied for fixed-layout
+PDF, CBZ, and CBR documents, whose KOReader reader path does not normally emit
+the page-animation event used by reflowable documents.
+
+On animation-capable devices, **More config...** contains **Page turn
+animations** and **Sync page animations with KOReader**. Synchronization is on
+by default: Panels+ follows KOReader's global **Page turn animations** setting,
+and changes made in either menu update it. Turn synchronization off to keep a
+separate Panels+ animation preference.
 
 ## Smooth navigation
+
+Native page-turn animation is incompatible with Smooth navigation, so Panels+
+temporarily suppresses it while Smooth is selected. The saved on/off preference
+is not changed and becomes effective again when navigation returns to Classic.
 
 For fixed-layout documents, smooth navigation renders the union of the old and
 new panel rectangles from the document page, places that result on a temporary

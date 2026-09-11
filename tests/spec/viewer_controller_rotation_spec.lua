@@ -38,6 +38,7 @@ describe("ViewerController device rotation across page boundaries", function()
         end
 
         local shown_spy = spy()
+        local current_viewer = {}
         local controller = setmetatable({
             ui = {
                 handleEvent = function(_, event)
@@ -47,13 +48,13 @@ describe("ViewerController device rotation across page boundaries", function()
                     Screen:setRotationMode(0)
                 end,
             },
-            showPanelViewerForPage = function(_, page, panels, start_idx)
-                shown_spy(page, panels, start_idx)
+            showPanelViewerForPage = function(_, page, panels, start_idx, options)
+                shown_spy(page, panels, start_idx, options)
                 return true
             end,
         }, { __index = ViewerController })
 
-        local result = controller:commitBoundaryTransition("next", {}, {
+        local result = controller:commitBoundaryTransition("next", current_viewer, {
             next_page = 2,
             panels = { { x = 0, y = 0, w = 1, h = 1 } },
             start_idx = 1,
@@ -66,6 +67,8 @@ describe("ViewerController device rotation across page boundaries", function()
         assert.equals(2, broadcast_spy:lastCall()[1].args[1])
         assert.equals(1, rotation_spy:callCount())
         assert.is_true(shown_spy:called())
+        assert.equals(current_viewer, shown_spy:lastCall()[4].replace_viewer)
+        assert.equals("next", shown_spy:lastCall()[4].boundary_direction)
         restoreUIManager()
     end)
 

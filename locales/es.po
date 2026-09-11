@@ -84,6 +84,9 @@ msgstr "Rotación de imagen (solo esta vista)"
 msgid "Invert panel swipe direction"
 msgstr "Invertir dirección de deslizamiento"
 
+msgid "Page turn animations (Actual: "
+msgstr "Animaciones de cambio de página (Actual: "
+
 msgid "Loose crop"
 msgstr "Recorte amplio"
 
@@ -236,6 +239,15 @@ msgstr "Seleccionar texto con pulsación prolongada [EXPERIMENTAL]"
 
 msgid "Transition frames (Actual: "
 msgstr "Fotogramas de transición (Actual: "
+
+msgid "Animate page boundaries in PDF, CBZ, CBR, and embedded-image documents. Smooth navigation temporarily disables this animation because the two effects are incompatible; returning to Classic restores the saved preference."
+msgstr "Anima los límites de página en documentos PDF, CBZ, CBR y con imágenes incrustadas. La navegación fluida desactiva temporalmente esta animación porque ambos efectos son incompatibles; al volver a Clásica se restaura la preferencia guardada."
+
+msgid "Sync page animations with KOReader (Actual: "
+msgstr "Sincronizar animaciones de página con KOReader (Actual: "
+
+msgid "When enabled, Panels+ follows KOReader's global Page turn animations setting and changes made here update KOReader too. Disable sync to keep an independent Panels+ on/off preference."
+msgstr "Cuando está activado, Panels+ sigue el ajuste global Animaciones de cambio de página de KOReader y los cambios realizados aquí también actualizan KOReader. Desactiva la sincronización para mantener una preferencia independiente de activación o desactivación en Panels+."
 
 msgid "Use KOReader's native panel zoom instead of the Panels+ panel sequence viewer."
 msgstr "Usa el zoom de paneles nativo de KOReader en lugar del visor de secuencias de paneles de Panels+."

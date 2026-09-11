@@ -379,13 +379,12 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
     })
     if options.replace_viewer then
-        -- All search-page turns were deliberately silent. Arm KOReader's
-        -- regular page-change animation only now, immediately before the old
-        -- crop is replaced by the destination crop. ReaderView still applies
-        -- the user's global `swipe_animations` setting and reading direction,
-        -- so this remains a no-op when page-turn animations are disabled.
+        -- All search-page turns were deliberately silent. Arm one animation
+        -- only now, immediately before the old crop is replaced by the
+        -- destination crop. The shared controller applies the Panels+/KOReader
+        -- sync preference and suppresses this while Smooth mode is selected.
         if options.boundary_direction then
-            self.ui:handleEvent(Event:new("PageChangeAnimation", options.boundary_direction == "next"))
+            self:armPageTurnAnimation(options.boundary_direction, options.replace_viewer)
         end
         UIManager:close(options.replace_viewer)
     end
