@@ -186,6 +186,19 @@ local function extractImage(document, pos)
     return nil
 end
 
+--- Move ReaderRolling while an embedded-image boundary search is hidden by
+--- the still-open panel viewer. ReaderRolling emits `PageChangeAnimation` for
+--- every `GotoPage`; on supported e-ink devices that arms a one-shot hardware
+--- swipe for the next refresh. Cancel that one-shot after the synchronous
+--- event dispatch so intervening text pages do not each animate underneath
+--- the overlay. The successful replacement explicitly arms one final swipe.
+local function gotoSearchPage(ui, page)
+    ui:handleEvent(Event:new("GotoPage", page))
+    if type(Screen.setSwipeAnimations) == "function" then
+        Screen:setSwipeAnimations(false)
+    end
+end
+
 local function startIndex(panels, point)
     if not point then
         return 1
@@ -366,6 +379,14 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
     })
     if options.replace_viewer then
+        -- All search-page turns were deliberately silent. Arm KOReader's
+        -- regular page-change animation only now, immediately before the old
+        -- crop is replaced by the destination crop. ReaderView still applies
+        -- the user's global `swipe_animations` setting and reading direction,
+        -- so this remains a no-op when page-turn animations are disabled.
+        if options.boundary_direction then
+            self.ui:handleEvent(Event:new("PageChangeAnimation", options.boundary_direction == "next"))
+        end
         UIManager:close(options.replace_viewer)
     end
     UIManager:show(viewer)
@@ -502,7 +523,7 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, genera
         end
         return false
     end
-    ui:handleEvent(Event:new("GotoPage", next_page))
+    gotoSearchPage(ui, next_page)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end
@@ -534,7 +555,7 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
         viewer:releaseEmbeddedSource(true)
     end
 
-    self.ui:handleEvent(Event:new("GotoPage", next_page))
+    gotoSearchPage(self.ui, next_page)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end

@@ -5,6 +5,7 @@ local describe, it, assert, spy = framework.describe, framework.it, framework.as
 local EmbeddedImage = require("src.embedded_image")
 local PanelViewer = require("src._panelviewer")
 local UIManager = require("ui/uimanager")
+local Screen = require("device").screen
 
 describe("EmbeddedImage KEPUB compatibility", function()
     it("opens image panels for direct and Kobo-synced KEPUB filenames", function()
@@ -50,8 +51,13 @@ describe("EmbeddedImage boundary flow", function()
         local close = spy()
         local handle = spy()
         local seek = spy()
+        local cancel_animation = spy()
         local old_close, old_tick = UIManager.close, UIManager.tickAfterNext
+        local old_set_swipe_animations = Screen.setSwipeAnimations
         UIManager.close = close
+        Screen.setSwipeAnimations = function(...)
+            return cancel_animation(...)
+        end
         UIManager.tickAfterNext = function(_, callback)
             UIManager._embedded_image_test_callback = callback
             return true
@@ -80,6 +86,7 @@ describe("EmbeddedImage boundary flow", function()
         assert.is_false(close:called(), "old panel viewer must stay up while the next image is being found")
         assert.equals("GotoPage", handle:lastCall()[2].name)
         assert.equals(5, handle:lastCall()[2].args[1])
+        assert.equals(false, cancel_animation:lastCall()[2])
         assert.is_true(release_source:called())
         assert.equals(true, release_source:lastCall()[2])
 
@@ -89,6 +96,99 @@ describe("EmbeddedImage boundary flow", function()
         assert.equals(viewer, seek:lastCall()[4], "the found image should replace this viewer without a reader flash")
 
         UIManager.close, UIManager.tickAfterNext = old_close, old_tick
+        Screen.setSwipeAnimations = old_set_swipe_animations
+    end)
+
+    it("cancels every hidden search turn, including pages without an image", function()
+        local handle = spy()
+        local cancel_animation = spy()
+        local old_tick = UIManager.tickAfterNext
+        local old_set_swipe_animations = Screen.setSwipeAnimations
+        UIManager.tickAfterNext = function(_, callback)
+            UIManager._embedded_image_test_callback = callback
+            return true
+        end
+        Screen.setSwipeAnimations = function(...)
+            return cancel_animation(...)
+        end
+
+        local plugin = {
+            ui = {
+                document = {
+                    getNextPage = function(_, page)
+                        return page + 1
+                    end,
+                },
+                handleEvent = handle,
+            },
+            findEmbeddedImageOnCurrentPage = function()
+                return nil
+            end,
+            _embedded_search_generation = 7,
+        }
+        local viewer = {}
+        plugin._embedded_search_viewer = viewer
+
+        assert.is_true(EmbeddedImage.openNextEmbeddedImagePage(plugin, 5, "next", viewer, 7))
+        assert.equals("GotoPage", handle:lastCall()[2].name)
+        assert.equals(6, handle:lastCall()[2].args[1])
+        assert.equals(1, cancel_animation:callCount())
+        assert.equals(false, cancel_animation:lastCall()[2])
+
+        UIManager.tickAfterNext = old_tick
+        Screen.setSwipeAnimations = old_set_swipe_animations
+    end)
+end)
+
+describe("EmbeddedImage native page animation", function()
+    it("arms one normal page animation only when replacing the source viewer", function()
+        local PageBitmap = require("src._pagebitmap")
+        local ComponentDetector = require("src._componentdetector")
+        local old_build = PageBitmap.buildFromBlitbuffer
+        local old_detect = ComponentDetector.detectPage
+        local old_close, old_show = UIManager.close, UIManager.show
+        PageBitmap.buildFromBlitbuffer = function()
+            return {}
+        end
+        ComponentDetector.detectPage = function()
+            return { { x = 0, y = 0, w = 600, h = 800 } }
+        end
+        UIManager.close = function() end
+        UIManager.show = function() end
+
+        local events = spy()
+        local plugin = {
+            settings = {
+                mode = "manga",
+                crop_mode = "strict",
+                embedded_nav_transition_mode = "classic",
+            },
+            ui = { handleEvent = events },
+        }
+        local function image()
+            return {
+                w = 600,
+                h = 800,
+                getType = function()
+                    return 1
+                end,
+            }
+        end
+
+        assert.is_true(EmbeddedImage.showEmbeddedImagePanelsForImage(plugin, image()))
+        assert.is_false(events:called(), "initial opens must not look like page turns")
+
+        assert.is_true(EmbeddedImage.showEmbeddedImagePanelsForImage(plugin, image(), {
+            replace_viewer = {},
+            boundary_direction = "next",
+        }))
+        assert.equals(1, events:callCount())
+        assert.equals("PageChangeAnimation", events:lastCall()[2].name)
+        assert.equals(true, events:lastCall()[2].args[1])
+
+        PageBitmap.buildFromBlitbuffer = old_build
+        ComponentDetector.detectPage = old_detect
+        UIManager.close, UIManager.show = old_close, old_show
     end)
 end)
 

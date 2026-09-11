@@ -53,7 +53,13 @@ On an image-to-image boundary, Panels+ keeps only the already-rendered current
 crop on screen. It immediately releases the old full source bitmap, its lazy
 crop closures, and any stale queued page search before scanning later reflow
 pages. This prevents one large EPUB/KEPUB/MOBI image from staying resident throughout
-an arbitrarily long search.
+an arbitrarily long search. Intermediate reader-page turns also cancel
+KOReader's one-shot hardware page animation. Once the destination image and
+its first (or last) panel are ready, Panels+ arms one normal page-change
+animation immediately before replacing the viewer. Consequently, devices with
+KOReader's **Page turn animations** enabled animate directly from the current
+panel to the destination panel exactly once; devices with that option disabled
+keep the same instant handoff.
 
 ## Smooth navigation
 
@@ -77,8 +83,10 @@ falls back to an instant panel switch before making a large temporary bitmap.
 Smooth animation **between images** is a separate, more expensive problem:
 the images may be on different reflow pages, have unrelated sizes, and require
 a page turn plus an asynchronous search before the next image is known. The
-safe scope is smooth movement between panels of the same image, with the
-flash-free classic handoff retained for image-to-image boundaries.
+camera-pan scope therefore remains limited to panels of the same image.
+Image-to-image boundaries use the single native KOReader page animation
+described above when the device and reader setting support it, or the classic
+instant handoff otherwise.
 
 ## What remains available
 
