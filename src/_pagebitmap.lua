@@ -1,6 +1,8 @@
 local Blitbuffer = require("ffi/blitbuffer")
 local Document = require("document/document")
 local Geom = require("ui/geometry")
+local RenderImage = require("ui/renderimage")
+local Memory = require("src._memory")
 local Settings = require("src._settings")
 local Timing = require("src._timing")
 local ffi = require("ffi")
@@ -19,6 +21,11 @@ local logger = require("logger")
 ---
 --- @class PPPageBitmapModule
 local PageBitmap = {}
+
+-- Resizing an extracted image needs a full private copy because the scaler
+-- consumes its input. Keep this modest safety floor after that allocation;
+-- the no-resize fallback below is deliberately available for older Kindles.
+local EMBEDDED_RESIZE_MIN_FREE_BYTES = 15 * 1024 * 1024
 
 --- @class PPPageMap
 --- @field w integer Map width in cells.
@@ -88,6 +95,110 @@ local function renderSmall(document, page, target_width)
         return nil
     end
     return tile.bb, native
+end
+
+--- Return the pixel dimensions both detection backends should use for an
+--- image. Fixed-layout documents already arrive from `renderSmall()` at this
+--- size; extracted reflow images must be rescaled to it first. Never enlarge
+--- a small source, matching `renderSmall()`'s `math.min(1, ...)` zoom.
+---
+--- @param width number Source image width.
+--- @param height number Source image height.
+--- @param target_width integer Maximum detector raster width.
+--- @return integer|nil width
+--- @return integer|nil height
+local function detectionRasterSize(width, height, target_width)
+    if not width or not height or width <= 0 or height <= 0 then
+        return nil, nil
+    end
+    local target_height = target_width * 2
+    if width <= target_width and height <= target_height then
+        return width, height
+    end
+    local scale = math.min(1, target_width / width, target_height / height)
+    return math.max(1, math.floor(width * scale + 0.5)), math.max(1, math.floor(height * scale + 0.5))
+end
+
+--- Conservative temporary memory required to rescale an extracted image.
+--- Four bytes per pixel deliberately overestimates greyscale and RGB24
+--- sources. The target buffer has a second allowance because normalizing an
+--- unusual colour format can briefly make another target-sized copy.
+local function embeddedResizeWorkingSetBytes(width, height, raster_w, raster_h)
+    return math.floor(width * height * 4 + raster_w * raster_h * 8 + 4 * 1024 * 1024)
+end
+
+local function hasEmbeddedResizeHeadroom(width, height, raster_w, raster_h)
+    return Memory.hasAllocationHeadroom(
+        EMBEDDED_RESIZE_MIN_FREE_BYTES,
+        embeddedResizeWorkingSetBytes(width, height, raster_w, raster_h)
+    )
+end
+
+--- Return the old bounded sparse-sampling step for the low-memory fallback.
+--- This avoids a new allocation entirely while retaining the historical cap
+--- for unusually tall reflow images.
+local function embeddedSparseStep(width, height, target_width)
+    local step = math.max(1, math.floor(width / target_width))
+    if math.floor(height / step) > target_width * 2 then
+        step = math.max(step, math.ceil(height / (target_width * 2)))
+    end
+    return step
+end
+
+--- Make an extracted reflow image match the fixed-page detector raster.
+---
+--- `RenderImage:scaleBlitBuffer()` takes ownership of its input. Copying here
+--- is essential: the original decoded image remains owned by the embedded
+--- viewer and is later used to render full-quality panel crops.
+---
+--- @param bb table Decoded embedded-image BlitBuffer.
+--- @param target_width integer Maximum detector raster width.
+--- @return table|nil raster
+--- @return table|nil owned Raster to free after detection, if newly allocated.
+--- @return boolean|nil resampled `true` only when a new target raster was made.
+local function makeEmbeddedDetectionRaster(bb, target_width)
+    local width, height = bb and bb.w, bb and bb.h
+    local raster_w, raster_h = detectionRasterSize(width, height, target_width)
+    if not raster_w then
+        return nil, nil, nil
+    end
+    if raster_w == width and raster_h == height then
+        return bb, nil, false
+    end
+    if type(bb.copy) ~= "function" then
+        Timing.memory("embedded resize skipped: image cannot be copied")
+        return bb, nil, false
+    end
+    local working_set = embeddedResizeWorkingSetBytes(width, height, raster_w, raster_h)
+    if not hasEmbeddedResizeHeadroom(width, height, raster_w, raster_h) then
+        Timing.memory(
+            "embedded resize skipped: low memory (%dx%d -> %dx%d, need %dMB + 15MB floor)",
+            width,
+            height,
+            raster_w,
+            raster_h,
+            math.ceil(working_set / (1024 * 1024))
+        )
+        return bb, nil, false
+    end
+
+    local copy
+    local ok, raster = pcall(function()
+        copy = bb:copy()
+        if not copy then
+            error("image copy failed")
+        end
+        -- scaleBlitBuffer consumes this private copy, never the retained source.
+        return RenderImage:scaleBlitBuffer(copy, raster_w, raster_h, true)
+    end)
+    if not ok or not raster then
+        if not ok and copy and copy ~= raster then
+            pcall(copy.free, copy)
+        end
+        Timing.log("embedded resize failed; using bounded sparse map")
+        return bb, nil, false
+    end
+    return raster, raster, true
 end
 
 --- Return a buffer whose raw pixels can be sampled without applying a rotation
@@ -599,27 +710,28 @@ function PageBitmap.buildFromBlitbuffer(bb, settings)
 
     local stop = Timing.span("embedded image bitmap")
     local target_width = settings.segment_target_width or Settings.defaults.segment_target_width
+    -- Panel crops are taken from the retained full-resolution source, so map
+    -- cells must convert back into this original image coordinate space.
+    local native_w, native_h = bb.w, bb.h
 
-    local map, reason, owned
+    local map, reason, owned, raster_owned
     local ok, err = pcall(function()
-        local work, is_rgb
-        work, owned, is_rgb = normalizeForSampling(bb)
-        local src_w, src_h = work.w, work.h
-        if not src_w or not src_h or src_w <= 0 or src_h <= 0 then
+        local raster, resampled
+        raster, raster_owned, resampled = makeEmbeddedDetectionRaster(bb, target_width)
+        if not raster then
             reason = "image has no dimensions"
             return
         end
-
+        local work, is_rgb
+        work, owned, is_rgb = normalizeForSampling(raster)
+        local src_w, src_h = work.w, work.h
         local sample, kind, raw_data, stride = makeSampler(work)
-        -- Match the fixed-layout fast detector: uniform sampling preserves
-        -- gutter thickness and panel aspect ratios, so Segmenter receives the
-        -- same kind of map whether its source is a document render or an
-        -- extracted image. Only exceptionally tall reflow images raise that
-        -- shared step, bounding their image-only map without distorting it.
-        local step = math.max(1, math.floor(src_w / target_width))
-        if math.floor(src_h / step) > target_width * 2 then
-            step = math.max(step, math.ceil(src_h / (target_width * 2)))
-        end
+        -- With enough headroom, the raster is explicitly resampled rather
+        -- than sparsely sampled. This matches the fixed-page render path and
+        -- gives connected-component detection the same line/gutter topology.
+        -- Under memory pressure, keep the old bounded sampler: it adds no
+        -- large buffers and lets a low-end device retain panel navigation.
+        local step = resampled and 1 or embeddedSparseStep(src_w, src_h, target_width)
         local w = math.floor(src_w / step)
         local h = math.floor(src_h / step)
         if w < 16 or h < 16 then
@@ -629,7 +741,7 @@ function PageBitmap.buildFromBlitbuffer(bb, settings)
 
         local border_cells, bg_r, bg_g, bg_b
         map, border_cells, bg_r, bg_g, bg_b =
-            buildMapFromBuffer(work, sample, kind, raw_data, stride, is_rgb, src_w, src_h, settings, step, w, h)
+            buildMapFromBuffer(work, sample, kind, raw_data, stride, is_rgb, native_w, native_h, settings, step, w, h)
         stop(
             string.format(
                 "%dx%d %s bg=%d,%d,%d%s ink=%d%%%s",
@@ -649,6 +761,12 @@ function PageBitmap.buildFromBlitbuffer(bb, settings)
     if owned then
         pcall(owned.free, owned)
     end
+    if raster_owned then
+        pcall(raster_owned.free, raster_owned)
+    end
+    if not Memory.hasHeadroom(EMBEDDED_RESIZE_MIN_FREE_BYTES) then
+        collectgarbage("collect")
+    end
     if not ok then
         logger.warn("[Panels+] embedded image bitmap failed:", err)
         return nil, "error"
@@ -660,5 +778,10 @@ end
 PageBitmap._estimateBackground = estimateBackground
 PageBitmap._colourDistance = colourDistance
 PageBitmap._luminance = luminance
+PageBitmap._detectionRasterSize = detectionRasterSize
+PageBitmap._embeddedResizeWorkingSetBytes = embeddedResizeWorkingSetBytes
+PageBitmap._hasEmbeddedResizeHeadroom = hasEmbeddedResizeHeadroom
+PageBitmap._embeddedSparseStep = embeddedSparseStep
+PageBitmap._makeEmbeddedDetectionRaster = makeEmbeddedDetectionRaster
 
 return PageBitmap

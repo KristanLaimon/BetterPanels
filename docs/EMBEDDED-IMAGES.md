@@ -30,11 +30,17 @@ Leptonica component collector once for the whole image. `Smart` follows the
 same policy as CBZ/CBR/PDF: Quick first, then Deep only if Quick rejects the
 image.
 
-Quick uses the same uniform sampling and panel segmentation as CBZ/CBR/PDF.
+Quick uses the same target-size raster and panel segmentation as CBZ/CBR/PDF.
 The source differs necessarily: fixed-layout files supply a rendered document
-page, while EPUB/KEPUB/MOBI supply the decoded image itself. The embedded map only
-applies a shared sampling cap to exceptionally tall images, so it does not
-turn a large reflow image into an unbounded allocation.
+page, while EPUB/KEPUB/MOBI supply a decoded image. Before detection, an
+embedded image is resampled into the same target-size bounds (without
+enlarging small images), so connected borders and gutters are classified at
+the same scale in both backends.
+
+On low-memory devices, that resize is guarded before allocating its temporary
+copy. If the safety floor cannot be maintained, Panels+ uses the older bounded
+sparse map for that one image instead of risking an out-of-memory kill. The
+full-resolution image remains untouched in either case.
 
 For an embedded image the native detector's coordinates are image-space, not
 reflow-page-space, so its returned rectangles can be cropped directly from the
