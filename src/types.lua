@@ -68,6 +68,8 @@
 --- @field panel_margin_ratio number Zoom-out fraction the "margin" crop mode applies to non-full-page panels.
 --- @field invert_swipe boolean
 --- @field invert_taps boolean
+--- @field remember_doc_settings boolean Whether per-document settings (mode, nav mode, progress bar, crop mode) are saved & restored.
+--- @field doc_settings table<string, table>|nil Per-document settings map fallback.
 --- @field progress_bar_visible boolean
 --- @field nav_transition_mode PPNavTransitionMode Classic, Smooth camera-pan, or framebuffer Animated navigation.
 --- @field nav_animated_panels boolean Whether Animated mode animates panel-to-panel switches.

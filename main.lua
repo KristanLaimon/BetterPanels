@@ -62,6 +62,7 @@ include(PanelsPlus, NativePanelZoom)
 function PanelsPlus:init()
     self.settings = Settings.load()
     Timing.enabled = self.settings.debug_mode == true
+    self:loadDocSettings()
     self.panel_cache = {}
     self.panel_cache_order = {}
     self.panel_prefetch_actions = {}
@@ -69,6 +70,106 @@ function PanelsPlus:init()
     self:onDispatcherRegisterActions()
     self:patchNativePanelZoom()
     self:applyNativePanelSetting()
+end
+
+--- KOReader hook: event sent when document loading is ready.
+function PanelsPlus:onReaderReady()
+    self:loadDocSettings()
+end
+
+--- Return the file path or key for the active document.
+---
+--- @return string|nil path Document file path or key.
+function PanelsPlus:getDocKey()
+    if self.ui and self.ui.doc_settings and self.ui.doc_settings.file then
+        return self.ui.doc_settings.file
+    end
+    if self.ui and self.ui.document and self.ui.document.file then
+        return self.ui.document.file
+    end
+    return nil
+end
+
+--- Read per-document settings for the active document if present.
+---
+--- @return table|nil doc_settings Table containing per-document overrides.
+function PanelsPlus:getDocSettings()
+    if self.ui and self.ui.doc_settings and type(self.ui.doc_settings.readSetting) == "function" then
+        local saved = self.ui.doc_settings:readSetting("panels_plus")
+        if type(saved) == "table" then
+            return saved
+        end
+    end
+    local doc_key = self:getDocKey()
+    if doc_key and self.settings.doc_settings and type(self.settings.doc_settings[doc_key]) == "table" then
+        return self.settings.doc_settings[doc_key]
+    end
+    return nil
+end
+
+--- Save current per-document settings (mode, nav_transition_mode, progress_bar_visible, crop_mode).
+---
+--- @param force boolean|nil Save even if the document hasn't had explicit per-document settings set yet.
+function PanelsPlus:saveDocSettings(force)
+    if self.settings.remember_doc_settings == false then
+        return
+    end
+    if not force and not self.doc_has_custom_settings then
+        return
+    end
+    local doc_key = self:getDocKey()
+    local doc_data = {
+        mode = self.settings.mode,
+        nav_transition_mode = self.settings.nav_transition_mode,
+        progress_bar_visible = self.settings.progress_bar_visible,
+        crop_mode = self.settings.crop_mode,
+    }
+    if self.ui and self.ui.doc_settings and type(self.ui.doc_settings.saveSetting) == "function" then
+        self.ui.doc_settings:saveSetting("panels_plus", doc_data)
+    end
+    if doc_key then
+        self.settings.doc_settings = self.settings.doc_settings or {}
+        self.settings.doc_settings[doc_key] = doc_data
+        self:saveSettings()
+    end
+    self.doc_has_custom_settings = true
+end
+
+--- Load per-document settings for the active document if enabled.
+function PanelsPlus:loadDocSettings()
+    self.doc_has_custom_settings = false
+    if self.settings.remember_doc_settings == false then
+        return
+    end
+    local doc_data = self:getDocSettings()
+    if doc_data then
+        self.doc_has_custom_settings = true
+        if doc_data.mode ~= nil then
+            self.settings.mode = doc_data.mode == "comic" and "comic" or "manga"
+        end
+        if doc_data.nav_transition_mode ~= nil then
+            local m = doc_data.nav_transition_mode
+            self.settings.nav_transition_mode = (m == "smooth" or m == "animated") and m or "classic"
+        end
+        if doc_data.progress_bar_visible ~= nil then
+            self.settings.progress_bar_visible = doc_data.progress_bar_visible ~= false
+        end
+        if doc_data.crop_mode ~= nil then
+            local c = doc_data.crop_mode
+            self.settings.crop_mode = (c == "loose" or c == "margin" or c == "none") and c or "strict"
+        end
+    end
+end
+
+--- Toggle whether per-document settings (reading mode, navigation mode, crop mode, progress bar) are remembered.
+---
+--- @param enabled any Truthy value enables per-document settings memory.
+function PanelsPlus:setRememberDocSettings(enabled)
+    self.settings.remember_doc_settings = enabled and true or false
+    self:saveSettings()
+    if self.settings.remember_doc_settings then
+        self:saveDocSettings(false)
+    end
 end
 
 --- Persist current plugin settings to KOReader reader settings.
@@ -111,6 +212,7 @@ function PanelsPlus:setMode(mode)
     self.settings.mode = mode == "comic" and "comic" or "manga"
     Timing.log("mode -> " .. self.settings.mode)
     self:saveSettings()
+    self:saveDocSettings(true)
 end
 
 --- Set how tightly panel crops are rendered in the viewer.
@@ -123,6 +225,7 @@ function PanelsPlus:setCropMode(crop_mode)
         self.settings.crop_mode = "strict"
     end
     self:saveSettings()
+    self:saveDocSettings(true)
 end
 
 --- Set the zoom-out amount the "With margin" crop mode applies.
@@ -190,6 +293,7 @@ end
 function PanelsPlus:setProgressBarVisible(visible)
     self.settings.progress_bar_visible = visible and true or false
     self:saveSettings()
+    self:saveDocSettings(true)
 end
 
 --- Set whether touch and hold on text in zoomed panels triggers text selection / dictionary.
@@ -207,6 +311,7 @@ function PanelsPlus:setNavTransitionMode(mode)
     self.settings.nav_transition_mode = (mode == "smooth" or mode == "animated") and mode or "classic"
     Timing.log("nav_transition_mode -> " .. self.settings.nav_transition_mode)
     self:saveSettings()
+    self:saveDocSettings(true)
 end
 
 --- Enable or disable framebuffer animation between panels in Animated mode.
@@ -337,6 +442,7 @@ end
 --- KOReader save hook: persist current settings.
 function PanelsPlus:onSaveSettings()
     self:saveSettings()
+    self:saveDocSettings()
 end
 
 --- KOReader close hook: drop scheduled work and restore native panel zoom.

@@ -12,6 +12,7 @@ package.path = repo_root .. "?.lua;" .. repo_root .. "?/init.lua;" .. package.pa
 require("tests.spec.helper")
 
 local spec_modules = {
+    "tests.spec.doc_settings_spec",
     "tests.spec.panelviewer_gotoviewrel_spec",
     "tests.spec.native_panel_zoom_spec",
     "tests.spec.memory_spec",

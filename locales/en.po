@@ -102,6 +102,12 @@ msgstr "Invert tap screens direction"
 msgid "Invert tap screens direction (Actual: "
 msgstr "Invert tap screens direction (Actual: "
 
+msgid "Remember per-document settings"
+msgstr "Remember per-document settings"
+
+msgid "Remember per-document settings (Actual: "
+msgstr "Remember per-document settings (Actual: "
+
 msgid "Page turn animations (Actual: "
 msgstr "Page turn animations (Actual: "
 

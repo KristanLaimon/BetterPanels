@@ -586,6 +586,25 @@ function ViewerController:showMoreConfigMenu(viewer)
             help_text = _(
                 "Use this if side tap navigation feels reversed on your device. It changes tap direction only, not panel order."
             ),
+        },
+        {
+            text = categorizedText(
+                _("Navigation"),
+                _("Remember per-document settings (Actual: ")
+                    .. (controller.settings.remember_doc_settings ~= false and _("true") or _("false"))
+                    .. ")"
+            ),
+            checked_func = function()
+                return controller.settings.remember_doc_settings ~= false
+            end,
+            callback = function()
+                controller:setRememberDocSettings(controller.settings.remember_doc_settings == false)
+                UIManager:close(menu)
+                controller:showMoreConfigMenu(viewer)
+            end,
+            help_text = _(
+                "Save and restore reading mode, navigation mode, crop mode, and progress bar visibility automatically for each document."
+            ),
             separator = true,
         },
     }

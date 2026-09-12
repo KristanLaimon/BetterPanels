@@ -43,8 +43,8 @@ local function parsePO(path)
         in_id, in_str, in_ctx = false, false, false
     end
 
-    for line in f:lines() do
-        line = line:match("^%s*(.-)%s*$")
+    for raw_line in f:lines() do
+        local line = raw_line:match("^%s*(.-)%s*$")
         if line == "" or line:match("^#") then
             if line == "" then
                 flush()

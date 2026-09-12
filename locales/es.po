@@ -102,6 +102,12 @@ msgstr "Invertir dirección de toques"
 msgid "Invert tap screens direction (Actual: "
 msgstr "Invertir dirección de toques (Actual: "
 
+msgid "Remember per-document settings"
+msgstr "Recordar ajustes por documento"
+
+msgid "Remember per-document settings (Actual: "
+msgstr "Recordar ajustes por documento (Actual: "
+
 msgid "Page turn animations (Actual: "
 msgstr "Animaciones de cambio de página (Actual: "
 

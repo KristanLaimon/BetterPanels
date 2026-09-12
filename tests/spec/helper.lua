@@ -43,6 +43,10 @@ local function newExtendableBase()
     return Base
 end
 
+preload("ui/widget/container/widgetcontainer", function()
+    return newExtendableBase()
+end)
+
 -- ImageViewer: the plugin's `PanelViewer` extends this. Every method the
 -- production code delegates to (`ImageViewer.onShowNextImage(self)`, etc.)
 -- is a spy-friendly no-op returning `true`, so specs can assert on
@@ -282,7 +286,13 @@ end)
 -- table, so specs can hand-invoke a stored `ok_callback`/`cancel_callback`
 -- without a real widget/rendering stack, and without `UIManager:show` (a
 -- no-op stub) ever calling them itself.
-for _, name in ipairs({ "ui/widget/confirmbox", "ui/widget/notification", "ui/widget/menu" }) do
+preload("dispatcher", function()
+    return {
+        registerAction = function() end,
+    }
+end)
+
+for _, name in ipairs({ "ui/widget/confirmbox", "ui/widget/notification", "ui/widget/menu", "ui/widget/infomessage" }) do
     preload(name, function()
         local Widget = {}
         function Widget:new(o)
