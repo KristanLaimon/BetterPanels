@@ -61,8 +61,11 @@ for arg in "$@"; do
 done
 
 if [ "$PYTHON_ONLY" = true ]; then
-    echo "==> Running Python Annotator Unit Tests..."
-    python3 -m unittest tests/dataset-mangas/annotator/test_annotator.py
+    echo "==> Running Python Unit Tests..."
+    python3 -m unittest discover -s tests -p "test_*.py"
+    if [ -f "tests/dataset-mangas/annotator/test_annotator.py" ]; then
+        python3 -m unittest tests/dataset-mangas/annotator/test_annotator.py
+    fi
     exit 0
 fi
 
@@ -77,10 +80,12 @@ if [ "$QUICK" = false ]; then
     ./check.sh
 fi
 
-if command -v python3 &>/dev/null && [ -f "tests/dataset-mangas/annotator/test_annotator.py" ]; then
-    echo "==> [2/3] Running Python Runner and Annotator Tests..."
-    python3 -m unittest discover -s tests -p test_parallel_runner.py
-    python3 -m unittest tests/dataset-mangas/annotator/test_annotator.py
+if command -v python3 &>/dev/null; then
+    echo "==> [2/3] Running Python Unit and Annotator Tests..."
+    python3 -m unittest discover -s tests -p "test_*.py"
+    if [ -f "tests/dataset-mangas/annotator/test_annotator.py" ]; then
+        python3 -m unittest tests/dataset-mangas/annotator/test_annotator.py
+    fi
 fi
 
 echo "==> [3/3] Running Lua Test Suite & Manga Dataset Specs..."

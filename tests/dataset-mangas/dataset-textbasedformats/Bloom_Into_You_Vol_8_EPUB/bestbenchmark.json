@@ -1,0 +1,16 @@
+{
+  "book_title": "Bloom_Into_You_Vol_8_EPUB",
+  "preview": {
+    "pages_evaluated": 3,
+    "total_ground_truth": 11,
+    "total_detected": 11,
+    "true_positives": 11,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "mean_iou": 1.0,
+    "gap_tolerance": 35,
+    "iou_threshold": 0.5
+  },
+  "updated_at": "2026-09-12"
+}
