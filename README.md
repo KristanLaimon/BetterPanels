@@ -16,12 +16,12 @@
 <table>
   <tr>
     <td align="center" width="50%">
-      <video src=".github/1_4_0/demo_revamped.mp4" controls width="420"></video>
+      <video src="https://raw.githubusercontent.com/KristanLaimon/BetterPanels/main/.github/1_4_0/demo_revamped.mp4" controls width="420"></video>
       <br>
       <sub>Core feature: Panel by panel smooth travelling. Battle-tested for performance on low-specs e-readers and old KOReader versions support.</sub>
     </td>
     <td align="center" width="50%">
-      <video src=".github/1_4_0/comics-showcase.mp4" controls width="420"></video>
+      <video src="https://raw.githubusercontent.com/KristanLaimon/BetterPanels/main/.github/1_4_0/comics-showcase.mp4" controls width="420"></video>
       <br>
       <sub>Comics showcase: Reading comic books panel by panel with custom panel flow and navigation.</sub>
     </td>
