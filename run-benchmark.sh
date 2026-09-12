@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# run-benchmark.sh - Manga panel detection benchmark tool
+# run-benchmark.sh - Manga/comic panel detection benchmark tool
 # ==============================================================================
 # Usage:
 #   ./run-benchmark.sh                    # Benchmark Bloom_Into_You_Vol_8
-#   ./run-benchmark.sh --all              # Benchmark all discovered manga datasets
+#   ./run-benchmark.sh --all              # Benchmark all discovered datasets
 #   ./run-benchmark.sh --update-best      # Benchmark and update bestbenchmark.json if better
 #   ./run-benchmark.sh --book <title>     # Benchmark a specific book
 #   ./run-benchmark.sh --failures-only    # Show only pages with missed panels
@@ -16,18 +16,19 @@ cd "$ROOT_DIR"
 
 print_help() {
     cat << 'EOF'
-PanelsPlus Manga Detection Benchmark
+PanelsPlus Manga/Comic Detection Benchmark
 
 Usage:
   ./run-benchmark.sh [OPTIONS]
 
 Options:
   -h, --help           Show this help message
-  -b, --book <title>   Benchmark a specific manga book (default: Bloom_Into_You_Vol_8)
+  -b, --book <title>   Benchmark a specific book (default: Bloom_Into_You_Vol_8)
   -p, --page <number>  Benchmark a specific 1-indexed page
   -a, --all            Benchmark all books discovered in tests/dataset-mangas/dataset/
   -u, --update-best    Update bestbenchmark.json if the current run beats the historical record
   -f, --failures-only  Display only pages with imperfect detection (F1 < 1.0)
+  --summary-only       Display aggregate metrics only
   -t, --threshold <n>  IoU threshold for true positive match (default: 0.50)
   --detector <name>    segmenter (default) or experimental components
 
@@ -86,5 +87,5 @@ if [ "$HAS_TARGET" = false ]; then
     ARGS+=("--book" "Bloom_Into_You_Vol_8")
 fi
 
-echo "==> Running Manga Panel Detection Benchmark..."
+echo "==> Running Manga/Comic Panel Detection Benchmark..."
 exec lua tools/benchmark_panels.lua "${ARGS[@]}"

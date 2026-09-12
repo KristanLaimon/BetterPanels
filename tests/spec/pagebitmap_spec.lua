@@ -157,6 +157,47 @@ describe("PageBitmap colour-aware background sampling", function()
         assert.equals(background.b, b)
     end)
 
+    it("uses a white spanning gutter as Comic paper when gray artwork reaches the border", function()
+        local function sample(_, y)
+            if y == 50 then
+                return 255, 255, 255
+            end
+            return 110, 110, 110
+        end
+
+        local manga_r = PageBitmap._estimateBackground(sample, 100, 100, nil, "manga")
+        local comic_r, comic_g, comic_b = PageBitmap._estimateBackground(sample, 100, 100, nil, "comic")
+        assert.equals(110, manga_r)
+        assert.equals(255, comic_r)
+        assert.equals(255, comic_g)
+        assert.equals(255, comic_b)
+    end)
+
+    it("keeps grayscale and RGB separator decisions equivalent at the 80% boundary", function()
+        for _, vertical in ipairs({ false, true }) do
+            for _, white_count in ipairs({ 0, 79, 80, 81, 100 }) do
+                -- Include stride padding and sparse sampling in the byte path.
+                local stride, step, data = 208, 2, {}
+                local function sample(x, y)
+                    local gx, gy = x / step, y / step
+                    local white = vertical and gx == 50 and gy >= 100 - white_count
+                        or not vertical and gy == 50 and gx >= 100 - white_count
+                    local value = white and 255 or 110
+                    return value, value, value
+                end
+                for y = 0, 99 do
+                    for x = 0, 99 do
+                        data[y * step * stride + x * step] = sample(x * step, y * step)
+                    end
+                end
+                local expected = white_count >= 80 and 255 or 110
+                assert.equals(expected, PageBitmap._estimateBackground(sample, 200, 200, step, "comic"))
+                assert.equals(expected, PageBitmap._estimateBackgroundGrey(data, stride, 200, 200, step, "comic"))
+                assert.equals(110, PageBitmap._estimateBackgroundGrey(data, stride, 200, 200, step, "manga"))
+            end
+        end
+    end)
+
     it("keeps a same-luminance coloured panel distinct from its background", function()
         -- These colours differ by only five luminance levels, so the old
         -- greyscale-only map treated the panel and backdrop as the same area.

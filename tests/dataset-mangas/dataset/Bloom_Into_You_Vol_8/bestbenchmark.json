@@ -1,4 +1,16 @@
 {
+  "components_full_volume": {
+    "pages_evaluated": 213,
+    "total_ground_truth": 726,
+    "total_detected": 677,
+    "true_positives": 655,
+    "precision": 0.9675,
+    "recall": 0.9022,
+    "f1": 0.9337,
+    "mean_iou": 0.9369,
+    "gap_tolerance": 35,
+    "iou_threshold": 0.5
+  },
   "book_title": "Bloom_Into_You_Vol_8",
   "full_volume": {
     "f1": 0.7992,

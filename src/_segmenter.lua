@@ -884,6 +884,84 @@ function Segmenter.segment(map, settings)
     return panels
 end
 
+--- Detect a contents/credits layout that the gutter cutter can mistake for a
+--- tall panel beside a stack of panels. In this layout the tall illustration
+--- owns nearly all of the page ink while the "stack" consists of sparse text
+--- fragments. Real side-stack panel layouts distribute substantially more ink
+--- through the smaller panels.
+---
+--- This is deliberately narrow: it requires at least six candidates, one
+--- near-full-height strip, every other candidate on the opposite side, and a
+--- strong density/ink-share contrast. Keeping the gate here (after ordinary
+--- segmentation) avoids changing any panel boundary produced for normal pages.
+local function looksLikePageFurnitureLayout(panels, map)
+    if #panels < 6 or not map.data or not map.ink or map.ink <= 0 then
+        return false
+    end
+
+    local page_w, page_h = map.native_w, map.native_h
+    local dominant_index, dominant = nil, nil
+    for index, panel in ipairs(panels) do
+        if
+            panel.h >= page_h * 0.90
+            and panel.w >= page_w * 0.20
+            and panel.w <= page_w * 0.50
+            and (not dominant or panel.w * panel.h > dominant.w * dominant.h)
+        then
+            dominant_index, dominant = index, panel
+        end
+    end
+    if not dominant then
+        return false
+    end
+
+    local strip_mid = dominant.x + dominant.w / 2
+    local strip_on_left = strip_mid < page_w / 2
+    for index, panel in ipairs(panels) do
+        if index ~= dominant_index then
+            if strip_on_left then
+                if panel.x < dominant.x + dominant.w * 0.90 then
+                    return false
+                end
+            elseif panel.x + panel.w > dominant.x + dominant.w * 0.10 then
+                return false
+            end
+        end
+    end
+
+    local function panelInk(panel)
+        local x0 = math.max(0, math.floor(panel.x / map.scale_x))
+        local y0 = math.max(0, math.floor(panel.y / map.scale_y))
+        local x1 = math.min(map.w - 1, math.floor((panel.x + panel.w) / map.scale_x))
+        local y1 = math.min(map.h - 1, math.floor((panel.y + panel.h) / map.scale_y))
+        local ink = 0
+        for y = y0, y1 do
+            local base = y * map.w
+            for x = x0, x1 do
+                if map.data[base + x] == 1 then
+                    ink = ink + 1
+                end
+            end
+        end
+        return ink, math.max(1, (x1 - x0 + 1) * (y1 - y0 + 1))
+    end
+
+    local dominant_ink, dominant_cells = panelInk(dominant)
+    if dominant_ink / map.ink < 0.75 or dominant_ink / dominant_cells < 0.60 then
+        return false
+    end
+
+    local minor_ink, minor_cells = 0, 0
+    for index, panel in ipairs(panels) do
+        if index ~= dominant_index then
+            local ink, cells = panelInk(panel)
+            minor_ink = minor_ink + ink
+            minor_cells = minor_cells + cells
+        end
+    end
+    return minor_cells > 0 and minor_ink / minor_cells < 0.30
+end
+
 --- Decide whether a segmentation result is trustworthy.
 ---
 --- @param panels PPPanel[] Segmented panel rectangles.
@@ -949,6 +1027,10 @@ function Segmenter.accept(panels, map, settings)
             end
         end
         return false, "single partial panel"
+    end
+
+    if looksLikePageFurnitureLayout(panels, map) then
+        return false, "page furniture mistaken for panels"
     end
 
     local covered_area = (max_x - min_x) * (max_y - min_y)

@@ -168,6 +168,37 @@ describe("Segmenter.segment panel cut", function()
         assert.equals(1, #segment(page, manga))
         assert.equals(1, #segment(page, comic))
     end)
+
+    it("preserves dense side-stack panels on either side of a full-height panel", function()
+        for _, strip_on_left in ipairs({ false, true }) do
+            local strip_x, stack_x = strip_on_left and 20 or 300, strip_on_left and 240 or 35
+            local page = Page.new()
+            page:art(strip_x, 0, 160, MAP_H, 0.85)
+            local candidates = { { x = strip_x, y = 0, w = 160, h = MAP_H } }
+            for row = 0, 5 do
+                page:art(stack_x, 70 + row * 100, 190, 45, 0.80)
+                candidates[#candidates + 1] = { x = stack_x, y = 70 + row * 100, w = 190, h = 45 }
+            end
+            assert.is_true(Segmenter.accept(candidates, page:toMap(false), manga))
+        end
+    end)
+
+    it("falls back for sparse contents text beside a dense full-height illustration", function()
+        local page = Page.new()
+        page:art(300, 0, 160, MAP_H, 0.85)
+        for row = 0, 5 do
+            page:art(35, 70 + row * 100, 190, 45, 0.15)
+        end
+
+        local map = page:toMap(false)
+        local candidates = { { x = 300, y = 0, w = 160, h = MAP_H } }
+        for row = 0, 5 do
+            candidates[#candidates + 1] = { x = 35, y = 70 + row * 100, w = 190, h = 45 }
+        end
+        local accepted, reason = Segmenter.accept(candidates, map, manga)
+        assert.is_false(accepted)
+        assert.equals("page furniture mistaken for panels", reason)
+    end)
 end)
 
 describe("Segmenter.segment sliver rejection", function()

@@ -217,6 +217,7 @@ class TestAnnotator(unittest.TestCase):
         recent = mgr.get_recent_books()
         self.assertEqual(len(recent), 1)
         self.assertEqual(recent[0]["book_title"], book_title)
+        self.assertEqual(recent[0]["type"], "manga")
         self.assertEqual(recent[0]["total_pages"], 4)
         self.assertEqual(recent[0]["annotated_pages"], 2)
         self.assertEqual(recent[0]["progress_percent"], 50)
@@ -227,6 +228,32 @@ class TestAnnotator(unittest.TestCase):
         recent_after = mgr.get_recent_books()
         self.assertTrue(recent_after[0]["finished"])
         self.assertEqual(recent_after[0]["progress_percent"], 100)
+
+    def test_metadata_type_is_limited_to_manga_or_comic(self):
+        ds_dir = os.path.join(self.test_dir, "dataset")
+        mgr = DatasetManager(ds_dir)
+
+        mgr.save_book_metadata("manga_book", {"book_title": "manga_book", "type": "manga"})
+        mgr.save_book_metadata("comic_book", {"book_title": "comic_book", "type": "comic"})
+        self.assertEqual(mgr.load_book_metadata("manga_book")["type"], "manga")
+        self.assertEqual(mgr.load_book_metadata("comic_book")["type"], "comic")
+
+        with self.assertRaises(ValueError):
+            mgr.save_book_metadata("invalid_book", {"book_title": "invalid_book", "type": "novel"})
+
+    def test_comic_color_metadata_is_validated_and_preserved(self):
+        mgr = DatasetManager(os.path.join(self.test_dir, "dataset"))
+        for mode in ("true_b/w", "colorless_b/w", "color"):
+            mgr.save_book_metadata("comic", {"type": "comic", "color_mode": mode})
+            mgr.mark_book_finished("comic")
+            mgr.update_last_opened("comic", 2)
+            self.assertEqual(mgr.load_book_metadata("comic")["color_mode"], mode)
+        for metadata in (
+            {"type": "manga", "color_mode": "true_b/w"},
+            {"type": "comic", "color_mode": "grayscale"},
+        ):
+            with self.assertRaises(ValueError):
+                mgr.save_book_metadata("invalid", metadata)
 
     def test_gitignore_dmca_rule(self):
         import subprocess
@@ -745,5 +772,3 @@ class TestAnnotator(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

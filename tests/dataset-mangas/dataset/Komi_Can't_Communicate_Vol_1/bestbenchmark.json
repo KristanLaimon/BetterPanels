@@ -1,0 +1,28 @@
+{
+  "book_title": "Komi_Can't_Communicate_Vol_1",
+  "full_volume": {
+    "pages_evaluated": 190,
+    "total_ground_truth": 747,
+    "total_detected": 712,
+    "true_positives": 639,
+    "precision": 0.8975,
+    "recall": 0.8554,
+    "f1": 0.8759,
+    "mean_iou": 0.9363,
+    "gap_tolerance": 35,
+    "iou_threshold": 0.5
+  },
+  "components_full_volume": {
+    "pages_evaluated": 190,
+    "total_ground_truth": 747,
+    "total_detected": 734,
+    "true_positives": 714,
+    "precision": 0.9728,
+    "recall": 0.9558,
+    "f1": 0.9642,
+    "mean_iou": 0.9708,
+    "gap_tolerance": 35,
+    "iou_threshold": 0.5
+  },
+  "updated_at": "2026-09-11"
+}

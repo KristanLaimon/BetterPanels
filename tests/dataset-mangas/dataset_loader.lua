@@ -4,6 +4,7 @@
 --- applying the same background estimation and ink mapping logic as `src/_pagebitmap.lua`.
 
 local Settings = require("src._settings")
+local has_ffi, ffi = pcall(require, "ffi")
 
 local DatasetLoader = {
     _magick_cmd = nil,
@@ -38,7 +39,43 @@ end
 --- @param w integer Map width
 --- @param h integer Map height
 --- @return integer Median background luminance (0-255)
-local function estimateBackground(raw, w, h)
+local function hasWhiteSeparator(raw, w, h)
+    local x_margin = math.max(1, math.floor(w * 0.03))
+    local y_margin = math.max(1, math.floor(h * 0.03))
+    local row_required, col_required = math.ceil(w * 0.80), math.ceil(h * 0.80)
+    for y = y_margin, h - 1 - y_margin do
+        local bright = 0
+        local base = y * w
+        for x = 0, w - 1 do
+            if raw:byte(base + x + 1) >= 245 then
+                bright = bright + 1
+            end
+            if bright >= row_required then
+                return true
+            end
+            if bright + w - 1 - x < row_required then
+                break
+            end
+        end
+    end
+    for x = x_margin, w - 1 - x_margin do
+        local bright = 0
+        for y = 0, h - 1 do
+            if raw:byte(y * w + x + 1) >= 245 then
+                bright = bright + 1
+            end
+            if bright >= col_required then
+                return true
+            end
+            if bright + h - 1 - y < col_required then
+                break
+            end
+        end
+    end
+    return false
+end
+
+local function estimateBackground(raw, w, h, mode)
     local histogram = {}
     for i = 0, 255 do
         histogram[i] = 0
@@ -75,6 +112,12 @@ local function estimateBackground(raw, w, h)
     for value = 0, 255 do
         seen = seen + histogram[value]
         if seen >= half then
+            -- Western comics frequently let gray artwork reach every outer
+            -- edge while retaining white, nearly page-spanning gutters. In
+            -- that case the border median describes panel fill, not paper.
+            if mode == "comic" and value < 224 and hasWhiteSeparator(raw, w, h) then
+                return 255
+            end
             return value
         end
     end
@@ -112,7 +155,13 @@ function DatasetLoader.loadPageMap(image_path, settings)
     settings = settings or {}
     local defaults = Settings.defaults
     local target_w = settings.segment_target_width or defaults.segment_target_width or 480
-    local cache_key = string.format("%s:%d:%s", image_path, target_w, tostring(settings.segment_ink_delta))
+    local cache_key = string.format(
+        "%s:%d:%s:%s",
+        image_path,
+        target_w,
+        tostring(settings.segment_ink_delta),
+        tostring(settings.mode)
+    )
     if DatasetLoader._cache[cache_key] then
         return DatasetLoader._cache[cache_key]
     end
@@ -122,16 +171,16 @@ function DatasetLoader.loadPageMap(image_path, settings)
     local disk_cache_path = string.format("%s/%s_w%d.bin", cache_dir, safe_name, target_w)
 
     local native_w, native_h, target_h, bg, raw
+    local cache_needs_write = false
     local f_cache = io.open(disk_cache_path, "rb")
     if f_cache then
         local header_line = f_cache:read("*l")
         if header_line then
-            local nw, nh, tw, th, b = header_line:match("^(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)$")
-            if nw and nh and tw and th and b and tonumber(tw) == target_w then
+            local nw, nh, tw, th = header_line:match("^(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+%d+$")
+            if nw and nh and tw and th and tonumber(tw) == target_w then
                 native_w = tonumber(nw)
                 native_h = tonumber(nh)
                 target_h = tonumber(th)
-                bg = tonumber(b)
                 raw = f_cache:read("*a")
             end
         end
@@ -179,10 +228,16 @@ function DatasetLoader.loadPageMap(image_path, settings)
             error(string.format("Truncated image data: expected %d bytes, got %d", target_w * target_h, #raw))
         end
 
-        -- 4. Background estimation
-        bg = estimateBackground(raw, target_w, target_h)
+        cache_needs_write = true
+    end
 
-        -- Save to disk cache for near-instant subsequent loads
+    -- Background policy depends on reading material type, while the cached
+    -- raster does not. Recompute it after reading the shared grayscale bytes
+    -- so changing Manga/Comic metadata takes effect immediately.
+    bg = estimateBackground(raw, target_w, target_h, settings.mode)
+
+    if cache_needs_write then
+        -- Save to disk cache for near-instant subsequent loads.
         os.execute("mkdir -p " .. cache_dir)
         local f_out = io.open(disk_cache_path .. ".tmp", "wb")
         if f_out then
@@ -197,7 +252,9 @@ function DatasetLoader.loadPageMap(image_path, settings)
     local ink_delta = settings.segment_ink_delta or defaults.segment_ink_delta or 30
 
     -- 5. Mark ink cells
-    local ink_data = {}
+    -- Match the reader's byte-per-cell storage under LuaJIT while keeping
+    -- this standalone loader usable with plain Lua too.
+    local ink_data = has_ffi and ffi.new("uint8_t[?]", target_w * target_h) or {}
     local total_ink = 0
     for y = 0, target_h - 1 do
         local row_base = y * target_w
@@ -226,7 +283,9 @@ function DatasetLoader.loadPageMap(image_path, settings)
         inverted = inverted,
         border = nil,
     }
-    DatasetLoader._cache[cache_key] = map
+    -- Full-volume runs visit hundreds of pages once. Keep only the latest
+    -- map for repeated detector calls; the disk cache retains reusable rasters.
+    DatasetLoader._cache = { [cache_key] = map }
     return map
 end
 

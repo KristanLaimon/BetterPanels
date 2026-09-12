@@ -200,7 +200,7 @@ describe("Miss Kobayashi's Dragon Maid human-annotated dataset validation", func
             local page = Manifest.getPage(BOOK_TITLE, p_idx)
             assert.is_not_nil(page, "Page " .. p_idx .. " must be retrieved by Manifest")
 
-            local map = Loader.loadPageMap(page.image_path)
+            local map = Loader.loadPageMap(page.image_path, { mode = page.reading_order })
             assert.equals(1264, map.native_w)
             assert.equals(1680, map.native_h)
             assert.is_true(map.ink > 0)
@@ -239,7 +239,7 @@ describe("Miss Kobayashi's Dragon Maid human-annotated dataset validation", func
         )
 
         -- Enforce regression protection against bestbenchmark.json:
-        -- Results must be equal or better than historical best. If better, bestbenchmark.json is updated!
+        -- Tests verify records without rewriting their own baselines.
         local current_metrics = {
             pages_evaluated = max_test_pages,
             total_ground_truth = total_gt,
@@ -253,7 +253,7 @@ describe("Miss Kobayashi's Dragon Maid human-annotated dataset validation", func
             iou_threshold = 0.50,
         }
         local mode = is_full_volume and "full_volume" or "preview"
-        local ok, regression_err = BenchmarkTracker.checkAndUpdate(BOOK_DIR, mode, current_metrics)
+        local ok, regression_err = BenchmarkTracker.checkAndUpdate(BOOK_DIR, mode, current_metrics, false)
         assert.is_true(ok, tostring(regression_err))
     end)
 end)

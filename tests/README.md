@@ -43,21 +43,32 @@ Formats with StyLua and validates with Luacheck:
 
 ## Panel Segmentation Benchmark Tool
 
-A dedicated CLI tool (`tools/benchmark_panels.lua`) is provided to evaluate panel detection across real manga pages:
+A dedicated CLI tool (`tools/benchmark_panels.lua`) evaluates panel detection across real manga and comic pages.
 
-The experimental connected-component candidate can be evaluated with
-`./run-benchmark.sh --detector components --all`. It is not yet active in the
-reader. See the [full-volume results and pending decisions](dataset-mangas/report/component-detector-2026-09-09.md).
-The default benchmark continues to score the original Lua segmenter; the reader
-currently calls the native detector, so these benchmark scores are not a direct
-measurement of the active reader path.
+The reader's connected-component detector can be evaluated with
+`./run-benchmark.sh --detector components --all`. The default benchmark remains
+the original Lua segmenter so its historical `bestbenchmark.json` records stay
+comparable.
+
+Every local volume has a separate `components_full_volume` production baseline.
+Tests guard precision, recall, F1, and mean IoU to the four-decimal record
+precision, without rewriting records. A passing regression test means scores
+were preserved; it does **not** mean every metric reached 95%. The existing
+Komi/Scott F1, recall, and IoU gates remain in place, but Scott's precision is
+currently below 95%, and Bloom/Kobayashi's recall and F1 are below 95%.
+
+Run `PANELSPLUS_REQUIRE_DATASETS=1 lua tests/run_tests.lua` to require all private
+page images. Otherwise unavailable full-volume production checks are reported
+as skipped. The loader keeps one page map in memory; under LuaJIT it uses the
+same byte-array storage as the reader. Preload real FFI for a native-array run:
+`luajit -l ffi tests/run_tests.lua`.
 
 ### Evaluate the Curated Golden Set
 ```bash
 lua tools/benchmark_panels.lua
 ```
 
-### Evaluate the Entire 214-Page Manga Dataset
+### Evaluate Every Discovered Dataset
 ```bash
 lua tools/benchmark_panels.lua --all
 ```
@@ -82,7 +93,7 @@ The benchmark calculates standard computer vision evaluation metrics:
 - **Precision**: Fraction of detected panels that matched a ground-truth panel ($\text{IoU} \ge 0.5$).
 - **Recall**: Fraction of ground-truth panels successfully detected ($\text{IoU} \ge 0.5$).
 - **F1 Score**: Harmonic mean of Precision and Recall ($2 \times \frac{P \times R}{P + R}$).
-- **Reading Order**: Verifies that detected panels are sorted in exact chronological reading order (top-to-bottom, right-to-left for manga).
+- **Reading Order**: Verifies top-to-bottom/right-to-left ordering for manga and top-to-bottom/left-to-right ordering for comics.
 
 ---
 

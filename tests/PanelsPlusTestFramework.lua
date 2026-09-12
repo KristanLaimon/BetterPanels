@@ -6,7 +6,7 @@
 
 local M = {}
 
-local stats = { passed = 0, failed = 0 }
+local stats = { passed = 0, failed = 0, skipped = 0 }
 local name_stack = {}
 
 local function fullName(name)
@@ -28,11 +28,18 @@ function M.it(name, fn)
     if ok then
         stats.passed = stats.passed + 1
         print("  [PASS] " .. full_name)
+    elseif type(err) == "table" and err.skip_reason then
+        stats.skipped = stats.skipped + 1
+        print("  [SKIP] " .. full_name .. ": " .. err.skip_reason)
     else
         stats.failed = stats.failed + 1
         print("  [FAIL] " .. full_name)
         print("         " .. tostring(err))
     end
+end
+
+function M.skip(reason)
+    error({ skip_reason = reason })
 end
 
 local function fail(msg, level)
@@ -125,7 +132,7 @@ end
 ---
 --- @return boolean all_passed
 function M.summary()
-    print(string.format("\n%d passed, %d failed", stats.passed, stats.failed))
+    print(string.format("\n%d passed, %d failed, %d skipped", stats.passed, stats.failed, stats.skipped))
     return stats.failed == 0
 end
 

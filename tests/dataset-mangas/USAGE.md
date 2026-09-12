@@ -40,7 +40,7 @@ tests/dataset-mangas/dataset/<bookfriendlyname>/
 ├── 02.png             # Page 3         (git included)
 ├── 03.png             # Page 4+        (GIT-IGNORED)
 ├── ...
-├── metadata.json      # Book progress & finished status
+├── metadata.json      # Book type, progress & finished status
 └── annotation.json    # Book panel annotations
 ```
 
@@ -175,9 +175,27 @@ dataset/
 │   ├── 02.png             # Page 3         (git-tracked)
 │   ├── 03.png             # Page 4+        (git-ignored for DMCA protection)
 │   ├── ...
-│   ├── metadata.json      # Book progress % & finished status
+│   ├── metadata.json      # Book type, progress % & finished status
 │   └── annotation.json    # Book panel annotations (automatically scanned by PanelsPlus)
 ```
+
+Every `metadata.json` must include a dataset `type`. Use `"manga"` for
+top-to-bottom, right-to-left reading order, or `"comic"` for top-to-bottom,
+left-to-right reading order:
+
+```json
+{
+  "book_title": "my_book",
+  "type": "manga"
+}
+```
+
+Comic datasets can also carry `color_mode`: `"true_b/w"` for artwork created
+in black and white, `"colorless_b/w"` for color artwork desaturated for reading,
+or `"color"` for artwork that retains its color. This field is only valid for
+`"type": "comic"`; it records provenance and does not select detector settings.
+Scott Pilgrim uses `"colorless_b/w"`. Missing values in older comic metadata
+remain unspecified. The import dialog asks for this value when importing comics.
 
 ### `annotation.json` Schema
 The output strictly matches PanelsPlus's `dataset_manifest.lua` format:
@@ -237,7 +255,12 @@ PanelsPlus provides convenient root executable scripts to run benchmarks and tes
 Each manga dataset directory (`tests/dataset-mangas/dataset/<manganame>/`) contains a `bestbenchmark.json` file recording the highest precision, recall, F1 score, and mean IoU ever achieved.
 
 - **Regression Protection**: Tests in `<manganame>_spec.lua` enforce that results are **never worse** than `bestbenchmark.json`. If a refactor causes accuracy to drop, the test fails with a `REGRESSION` alert.
-- **Auto-Record Updates**: If an algorithm improvement achieves higher accuracy (better F1 score or recall), `bestbenchmark.json` is automatically updated with the new record metrics.
+- **Record Updates**: Tests do not rewrite their baselines. Use `--update-best`
+  explicitly after reviewing an improvement. Records for the reader's detector
+  use `components_full_volume`, separate from the legacy segmenter's `full_volume`.
+  Both `--all` and individual-book runs check the selected detector's records
+  and exit unsuccessfully on regressions. Non-default IoU thresholds are not
+  compared with or written into the default-threshold records.
 
 ### 3. Automated Test Suite (`./run-tests.sh`)
 

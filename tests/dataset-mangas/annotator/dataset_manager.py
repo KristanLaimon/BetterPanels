@@ -147,6 +147,7 @@ class DatasetManager:
                 pass
         return {
             "book_title": book_title,
+            "type": "manga",
             "total_pages": 0,
             "finished": False,
             "current_page": 1,
@@ -155,6 +156,15 @@ class DatasetManager:
         }
 
     def save_book_metadata(self, book_title: str, metadata: dict) -> None:
+        dataset_type = metadata.get("type", "manga")
+        if dataset_type not in ("manga", "comic"):
+            raise ValueError('metadata type must be "manga" or "comic"')
+        if "color_mode" in metadata:
+            if dataset_type != "comic":
+                raise ValueError('color_mode is only valid for comic datasets')
+            if metadata["color_mode"] not in ("true_b/w", "colorless_b/w", "color"):
+                raise ValueError('color_mode must be "true_b/w", "colorless_b/w", or "color"')
+        metadata["type"] = dataset_type
         book_dir = self.get_book_dir(book_title)
         os.makedirs(book_dir, exist_ok=True)
         meta_file = self.get_metadata_path(book_title)
@@ -213,6 +223,7 @@ class DatasetManager:
 
                 recent_list.append({
                     "book_title": book_title,
+                    "type": meta.get("type", "manga"),
                     "book_dir": book_dir,
                     "cover_path": cover_file if os.path.exists(cover_file) else None,
                     "total_pages": total_pages,

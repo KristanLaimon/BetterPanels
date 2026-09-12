@@ -1,4 +1,4 @@
---- Dataset manifest loader for Manga panel evaluation.
+--- Dataset manifest loader for manga and comic panel evaluation.
 ---
 --- Parses and normalizes dataset metadata and ground-truth frames.
 
@@ -42,14 +42,53 @@ local function resolveImagePath(dataset_dir, book_dir, rel_img)
 end
 
 --- Parse decoded books JSON structure into normalized book and page tables.
+local function loadDatasetMetadata(book_dir)
+    local metadata_path = book_dir .. "/metadata.json"
+    local f = io.open(metadata_path, "r")
+    if not f then
+        return "manga"
+    end
+
+    local raw = f:read("*a")
+    f:close()
+    local metadata = JSON.decode(raw)
+    local dataset_type = metadata and metadata.type or nil
+    if dataset_type ~= "manga" and dataset_type ~= "comic" then
+        error(string.format('%s must contain type "manga" or "comic"', metadata_path))
+    end
+    local color_mode = metadata.color_mode
+    if color_mode ~= nil then
+        if dataset_type ~= "comic" then
+            error(metadata_path .. ": color_mode is only valid for comic datasets")
+        end
+        if color_mode ~= "true_b/w" and color_mode ~= "colorless_b/w" and color_mode ~= "color" then
+            error(metadata_path .. ': color_mode must be "true_b/w", "colorless_b/w", or "color"')
+        end
+    end
+    return dataset_type, color_mode
+end
+
 local function parseBooksFromRaw(raw_books, dataset_dir, book_dir)
     local books = {}
     for _, raw_book in ipairs(raw_books) do
+        local effective_book_dir = book_dir or (dataset_dir .. "/" .. (raw_book.book_title or ""))
+        -- A root annotation file can contain books with different metadata.
+        if effective_book_dir == dataset_dir then
+            local nested_dir = dataset_dir .. "/" .. (raw_book.book_title or "")
+            local nested_meta = io.open(nested_dir .. "/metadata.json", "r")
+            if nested_meta then
+                nested_meta:close()
+                effective_book_dir = nested_dir
+            end
+        end
+        local dataset_type, color_mode = loadDatasetMetadata(effective_book_dir)
         local book = {
             book_title = raw_book.book_title,
+            directory = effective_book_dir,
+            type = dataset_type,
+            color_mode = color_mode,
             pages = {},
         }
-        local effective_book_dir = book_dir or (dataset_dir .. "/" .. (raw_book.book_title or ""))
         for _, raw_page in ipairs(raw_book.pages or {}) do
             local rel_img = nil
             if raw_page.image_paths and type(raw_page.image_paths) == "table" then
@@ -75,11 +114,13 @@ local function parseBooksFromRaw(raw_books, dataset_dir, book_dir)
             end
 
             table.insert(book.pages, {
-                dataset = "manga",
+                dataset = dataset_type,
+                type = dataset_type,
+                color_mode = color_mode,
                 book_title = raw_book.book_title,
                 page_index = raw_page.page_index,
                 image_path = img_path,
-                reading_order = "manga",
+                reading_order = dataset_type,
                 frames = frames,
                 text = raw_page.text or {},
             })
@@ -89,7 +130,7 @@ local function parseBooksFromRaw(raw_books, dataset_dir, book_dir)
     return books
 end
 
---- Load and cache manga dataset.
+--- Load and cache manga/comic datasets.
 ---
 --- Supports both per-book `dataset/<manganame>/annotation.json` and optional root `dataset/annotation.json`.
 ---

@@ -599,11 +599,35 @@ class AnnotatorMainWindow(QMainWindow):
         filt = "Comic & Document Archives (*.cbz *.cbr *.pdf *.epub *.kepub.epub *.mobi *.jpg *.png);;All Files (*)"
         fpath, _ = QFileDialog.getOpenFileName(self, "Select Comic / Document to Import", "", filt)
         if fpath:
-            self.import_or_open_file(fpath)
+            label, ok = QInputDialog.getItem(
+                self,
+                "Reading Direction",
+                "Dataset type:",
+                ["Manga (right to left)", "Comic (left to right)"],
+                0,
+                False,
+            )
+            if ok:
+                dataset_type = "comic" if label.startswith("Comic") else "manga"
+                color_mode = None
+                if dataset_type == "comic":
+                    color_mode, ok = QInputDialog.getItem(
+                        self, "Comic Color", "Artwork color mode:",
+                        ["true_b/w", "colorless_b/w", "color"], 0, False,
+                    )
+                    if not ok:
+                        return
+                self.import_or_open_file(fpath, dataset_type=dataset_type, color_mode=color_mode)
 
-    def import_or_open_file(self, file_path: str, friendly_name: Optional[str] = None):
+    def import_or_open_file(self, file_path: str, friendly_name: Optional[str] = None, dataset_type: str = "manga", color_mode: Optional[str] = None):
         """Extract file into dataset/<bookfriendlyname>/00.png, 01.png... and open it."""
         try:
+            if dataset_type not in ("manga", "comic"):
+                raise ValueError('dataset_type must be "manga" or "comic"')
+            if color_mode is not None and (
+                dataset_type != "comic" or color_mode not in ("true_b/w", "colorless_b/w", "color")
+            ):
+                raise ValueError('Invalid comic color_mode')
             # 1. Ask or derive friendly book name if not provided
             stem = os.path.splitext(os.path.basename(file_path))[0]
             clean_name = re.sub(r'[\s_]+', '_', stem.strip())
@@ -665,12 +689,15 @@ class AnnotatorMainWindow(QMainWindow):
             # 3. Save initial metadata
             meta = {
                 "book_title": friendly_name,
+                "type": dataset_type,
                 "total_pages": total,
                 "finished": False,
                 "current_page": 1,
                 "last_opened": "",
                 "source_file": file_path,
             }
+            if color_mode is not None:
+                meta["color_mode"] = color_mode
             self.dataset_mgr.save_book_metadata(friendly_name, meta)
 
             # 4. Open extracted book in annotator

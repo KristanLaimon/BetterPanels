@@ -70,18 +70,24 @@ end
 
 --- Check whether current metrics have regressed compared to best benchmark.
 ---
---- Allows a tiny margin (0.5% / 0.005) to avoid false alarms due to minor floating-point fluctuations.
+--- Only allow the rounding error of the four-decimal JSON records by default.
 ---
 --- @param current table Current metrics {f1, recall, precision, mean_iou}
 --- @param best table Best baseline metrics {f1, recall, precision, mean_iou}
---- @param tolerance number|nil Margin allowed before flagging regression (default 0.005)
+--- @param tolerance number|nil Explicit margin override (default 0.00005)
 --- @return boolean ok True if equal or better (no regression)
 --- @return string|nil error Message describing the regression if failed
 function BenchmarkTracker.verifyNoRegression(current, best, tolerance)
     if not best then
         return true, nil
     end
-    local tol = tolerance or 0.005
+    local tol = tolerance or 0.000050000001
+
+    -- Precision was previously unguarded, so added false positives could pass.
+    if (current.precision or 0) < (best.precision or 0) - tol then
+        return false,
+            string.format("REGRESSION in Precision: got %.6f, best %.6f", current.precision or 0, best.precision or 0)
+    end
 
     -- 1. Check F1 score regression
     if (current.f1 or 0) < (best.f1 or 0) - tol then
@@ -106,12 +112,12 @@ function BenchmarkTracker.verifyNoRegression(current, best, tolerance)
     end
 
     -- 3. Check Mean IoU regression
-    if (current.mean_iou or 0) < (best.mean_iou or 0) - 0.02 then
+    if (current.mean_iou or 0) < (best.mean_iou or 0) - tol then
         return false,
             string.format(
                 "REGRESSION in Mean IoU: got %.2f, expected at least %.2f (best was %.2f)",
                 current.mean_iou or 0,
-                (best.mean_iou or 0) - 0.02,
+                (best.mean_iou or 0) - tol,
                 best.mean_iou or 0
             )
     end

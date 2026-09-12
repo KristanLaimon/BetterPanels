@@ -3,10 +3,11 @@
 ---
 --- Usage:
 ---   lua tools/benchmark_panels.lua                         # Evaluates golden manga pages
----   lua tools/benchmark_panels.lua --all                   # Evaluates all 214 manga pages
+---   lua tools/benchmark_panels.lua --all                   # Evaluates all discovered datasets
 ---   lua tools/benchmark_panels.lua --book tojime_no_siora  # Evaluates one book
 ---   lua tools/benchmark_panels.lua --book tojime_no_siora --page 2 # Detailed box inspect
 ---   lua tools/benchmark_panels.lua --failures-only         # Only reports pages with issues
+---   lua tools/benchmark_panels.lua --summary-only          # Only reports aggregate metrics
 ---   lua tools/benchmark_panels.lua --threshold 0.75        # Strict IoU threshold
 
 local script_dir = arg[0]:match("(.*/)") or "./"
@@ -26,6 +27,7 @@ local target_book = nil
 local target_page = nil
 local run_all = false
 local failures_only = false
+local summary_only = false
 local update_best = false
 local detector_name = "segmenter"
 local iou_threshold = 0.5
@@ -38,6 +40,8 @@ while idx <= #arg do
         run_all = true
     elseif a == "--failures-only" then
         failures_only = true
+    elseif a == "--summary-only" then
+        summary_only = true
     elseif a == "--update-best" or a == "--update" then
         update_best = true
     elseif a == "--book" and arg[idx + 1] then
@@ -64,10 +68,6 @@ if detector_name == "components" then
     detector = require("src._componentdetector")
 elseif detector_name ~= "segmenter" then
     io.stderr:write("Unknown detector: " .. detector_name .. " (choose segmenter or components)\n")
-    os.exit(1)
-end
-if update_best and detector_name ~= "segmenter" then
-    io.stderr:write("Experimental component results must not overwrite segmenter benchmark records.\n")
     os.exit(1)
 end
 
@@ -119,12 +119,34 @@ local evaluated_count = 0
 local total_order_ok = 0
 local page_count = 0
 local failure_count = 0
+local book_metrics = {}
 
 for _, page in ipairs(pages) do
     if page.frames and #page.frames > 0 then
-        local map = Loader.loadPageMap(page.image_path)
+        local map = Loader.loadPageMap(page.image_path, { mode = page.reading_order })
         local detected = detector.detectPage(map, { mode = page.reading_order })
         local result = Evaluator.evaluate(page.frames, detected, iou_threshold, 35)
+
+        local metrics = book_metrics[page.book_title]
+        if not metrics then
+            metrics = {
+                pages_evaluated = 0,
+                total_ground_truth = 0,
+                total_detected = 0,
+                true_positives = 0,
+                iou_sum = 0,
+                matched_pages = 0,
+            }
+            book_metrics[page.book_title] = metrics
+        end
+        metrics.pages_evaluated = metrics.pages_evaluated + 1
+        metrics.total_ground_truth = metrics.total_ground_truth + result.ground_truth_count
+        metrics.total_detected = metrics.total_detected + result.detected_count
+        metrics.true_positives = metrics.true_positives + result.true_positives
+        if result.true_positives > 0 then
+            metrics.iou_sum = metrics.iou_sum + result.mean_iou
+            metrics.matched_pages = metrics.matched_pages + 1
+        end
 
         total_gt = total_gt + result.ground_truth_count
         total_det = total_det + result.detected_count
@@ -144,7 +166,7 @@ for _, page in ipairs(pages) do
             failure_count = failure_count + 1
         end
 
-        if not failures_only or is_imperfect then
+        if not summary_only and (not failures_only or is_imperfect) then
             local status_symbol = is_imperfect and "[x]" or "[o]"
             print(
                 string.format(
@@ -215,24 +237,40 @@ print(
     )
 )
 
-if target_book and not target_page and detector_name == "segmenter" then
-    local book_dir = dataset_dir .. "/" .. target_book
-    local is_full = (page_count >= 100)
-    local mode = is_full and "full_volume" or "preview"
-    local current_metrics = {
-        pages_evaluated = page_count,
-        total_ground_truth = total_gt,
-        total_detected = total_det,
-        true_positives = total_tp,
-        precision = global_prec,
-        recall = global_rec,
-        f1 = global_f1,
-        mean_iou = avg_m_iou,
-        gap_tolerance = 35,
-        iou_threshold = iou_threshold,
-    }
-    local ok, reason = BenchmarkTracker.checkAndUpdate(book_dir, mode, current_metrics, update_best)
-    if not ok then
-        print("\n  [REGRESSION ALERT] " .. tostring(reason))
+local regressed = false
+if not target_page and (target_book or run_all) and iou_threshold == 0.5 then
+    for _, book in ipairs(Manifest.loadManga(dataset_dir)) do
+        local metrics = book_metrics[book.book_title]
+        if metrics then
+            local book_dir = book.directory
+            local mode = metrics.pages_evaluated == #book.pages and "full_volume" or "preview"
+            if detector_name == "components" then
+                mode = "components_" .. mode
+            end
+            metrics.precision = metrics.total_detected > 0 and metrics.true_positives / metrics.total_detected or 0
+            metrics.recall = metrics.total_ground_truth > 0 and metrics.true_positives / metrics.total_ground_truth or 0
+            local denominator = metrics.total_ground_truth + metrics.total_detected
+            metrics.f1 = denominator > 0 and 2 * metrics.true_positives / denominator or 0
+            metrics.mean_iou = metrics.matched_pages > 0 and metrics.iou_sum / metrics.matched_pages or 0
+            metrics.gap_tolerance, metrics.iou_threshold = 35, iou_threshold
+            print(
+                string.format(
+                    "  %s: Precision %.2f%%, Recall %.2f%%, F1 %.2f%%, IoU %.4f",
+                    book.book_title,
+                    metrics.precision * 100,
+                    metrics.recall * 100,
+                    metrics.f1 * 100,
+                    metrics.mean_iou
+                )
+            )
+            local ok, reason = BenchmarkTracker.checkAndUpdate(book_dir, mode, metrics, update_best)
+            if not ok then
+                print("\n  [REGRESSION ALERT] " .. book.book_title .. ": " .. tostring(reason))
+                regressed = true
+            end
+        end
     end
+end
+if regressed then
+    os.exit(1)
 end

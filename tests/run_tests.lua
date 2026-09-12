@@ -37,6 +37,8 @@ local spec_modules = {
     "tests.spec.panelcollector_spec",
     "tests.spec.panelviewer_navtransition_spec",
     "tests.spec.dataset_benchmark_spec",
+    "tests.spec.dataset_support_spec",
+    "tests.spec.new_dataset_benchmark_spec",
 }
 
 -- Dynamically discover and run per-manga specs in tests/dataset-mangas/dataset/<manganame>/*_spec.lua

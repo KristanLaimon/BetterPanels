@@ -350,10 +350,46 @@ local function colourDistance(r, g, b, background_r, background_g, background_b)
     return math.max(dr, dg, db)
 end
 
---- Fast background estimation for 8bpp greyscale images.
---- Reads directly from memory with zero closures or allocations.
---- Subsamples using step so border inspection takes <0.2ms.
-local function estimateBackgroundGrey(data, stride, w, h, step)
+--- Look for a white separator without allocating another page-sized buffer.
+local function hasWhiteSeparatorGrey(data, stride, w, h, step)
+    local grid_w = math.floor(w / step)
+    local grid_h = math.floor(h / step)
+    local x_margin = math.max(1, math.floor(grid_w * 0.03))
+    local y_margin = math.max(1, math.floor(grid_h * 0.03))
+    local row_required, col_required = math.ceil(grid_w * 0.80), math.ceil(grid_h * 0.80)
+    for y = y_margin, grid_h - 1 - y_margin do
+        local bright = 0
+        local row = y * step * stride
+        for x = 0, grid_w - 1 do
+            if data[row + x * step] >= 245 then
+                bright = bright + 1
+            end
+            if bright >= row_required then
+                return true
+            end
+            if bright + grid_w - 1 - x < row_required then
+                break
+            end
+        end
+    end
+    for x = x_margin, grid_w - 1 - x_margin do
+        local bright = 0
+        for y = 0, grid_h - 1 do
+            if data[y * step * stride + x * step] >= 245 then
+                bright = bright + 1
+            end
+            if bright >= col_required then
+                return true
+            end
+            if bright + grid_h - 1 - y < col_required then
+                break
+            end
+        end
+    end
+    return false
+end
+
+local function estimateBackgroundGrey(data, stride, w, h, step, mode)
     step = step or 1
     local histogram = {}
     for value = 0, 255 do
@@ -390,6 +426,9 @@ local function estimateBackgroundGrey(data, stride, w, h, step)
     for value = 0, 255 do
         seen = seen + histogram[value]
         if seen >= half then
+            if mode == "comic" and value < 224 and hasWhiteSeparatorGrey(data, stride, w, h, step) then
+                return 255
+            end
             return value
         end
     end
@@ -409,7 +448,48 @@ end
 --- @return integer r Median border red channel (0-255).
 --- @return integer g Median border green channel (0-255).
 --- @return integer b Median border blue channel (0-255).
-local function estimateBackground(sample, w, h, step)
+local function hasWhiteSeparator(sample, w, h, step)
+    local grid_w = math.floor(w / step)
+    local grid_h = math.floor(h / step)
+    local x_margin = math.max(1, math.floor(grid_w * 0.03))
+    local y_margin = math.max(1, math.floor(grid_h * 0.03))
+    local row_required, col_required = math.ceil(grid_w * 0.80), math.ceil(grid_h * 0.80)
+    local function isWhite(grid_x, grid_y)
+        local r, g, b = sample(grid_x * step, grid_y * step)
+        return r >= 245 and g >= 245 and b >= 245
+    end
+    for y = y_margin, grid_h - 1 - y_margin do
+        local bright = 0
+        for x = 0, grid_w - 1 do
+            if isWhite(x, y) then
+                bright = bright + 1
+            end
+            if bright >= row_required then
+                return true
+            end
+            if bright + grid_w - 1 - x < row_required then
+                break
+            end
+        end
+    end
+    for x = x_margin, grid_w - 1 - x_margin do
+        local bright = 0
+        for y = 0, grid_h - 1 do
+            if isWhite(x, y) then
+                bright = bright + 1
+            end
+            if bright >= col_required then
+                return true
+            end
+            if bright + grid_h - 1 - y < col_required then
+                break
+            end
+        end
+    end
+    return false
+end
+
+local function estimateBackground(sample, w, h, step, mode)
     step = step or 1
     local red, green, blue = {}, {}, {}
     for value = 0, 255 do
@@ -455,7 +535,11 @@ local function estimateBackground(sample, w, h, step)
         return 255
     end
 
-    return median(red), median(green), median(blue)
+    local r, g, b = median(red), median(green), median(blue)
+    if mode == "comic" and math.max(r, g, b) < 224 and hasWhiteSeparator(sample, w, h, step) then
+        return 255, 255, 255
+    end
+    return r, g, b
 end
 
 --- Build an ink map from normalized buffer data.
@@ -489,7 +573,7 @@ local function buildMapFromBuffer(
 
     if not is_rgb and kind == "bb8" and raw_data ~= nil and stride ~= nil then
         -- Fast greyscale path (manga / e-ink / black-and-white artwork)
-        local bg_val = estimateBackgroundGrey(raw_data, stride, src_w, src_h, step)
+        local bg_val = estimateBackgroundGrey(raw_data, stride, src_w, src_h, step, settings.mode)
         background = bg_val
         background_r, background_g, background_b = bg_val, bg_val, bg_val
 
@@ -535,7 +619,7 @@ local function buildMapFromBuffer(
         end
     else
         -- Colour-aware path (Western colour comics / colour displays)
-        background_r, background_g, background_b = estimateBackground(sample, src_w, src_h, step)
+        background_r, background_g, background_b = estimateBackground(sample, src_w, src_h, step, settings.mode)
         background = luminance(background_r, background_g, background_b)
 
         if border then
@@ -776,6 +860,7 @@ end
 
 -- Exposed for the small, render-free colour-map specs.
 PageBitmap._estimateBackground = estimateBackground
+PageBitmap._estimateBackgroundGrey = estimateBackgroundGrey
 PageBitmap._colourDistance = colourDistance
 PageBitmap._luminance = luminance
 PageBitmap._detectionRasterSize = detectionRasterSize

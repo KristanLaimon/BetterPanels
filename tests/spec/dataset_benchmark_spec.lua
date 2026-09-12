@@ -30,6 +30,24 @@ describe("Manga dataset golden set panel detection", function()
         assert.equals(0, Evaluator.boxIoU(box1, box3))
     end)
 
+    it("loads manga and comic reading direction from metadata", function()
+        local expected_types = {
+            ["Bloom_Into_You_Vol_8"] = "manga",
+            ["Komi_Can't_Communicate_Vol_1"] = "manga",
+            ["Miss_Kobayashi's_Dragon_Maid_Vol_2"] = "manga",
+            ["Scott_Pilgrim_Vol_5"] = "comic",
+        }
+
+        for book_title, expected_type in pairs(expected_types) do
+            local page = Manifest.getPage(book_title, 1)
+            assert.is_not_nil(page, "Expected dataset " .. book_title)
+            assert.equals(expected_type, page.type)
+            assert.equals(expected_type, page.dataset)
+            assert.equals(expected_type, page.reading_order)
+            assert.equals(expected_type == "comic" and "colorless_b/w" or nil, page.color_mode)
+        end
+    end)
+
     if #golden_pages > 0 then
         it("loads all golden pages and their ground-truth frames", function()
             for _, page in ipairs(golden_pages) do
@@ -46,7 +64,7 @@ describe("Manga dataset golden set panel detection", function()
 
         it("segments real manga pages without crashing and extracts valid panels", function()
             for _, page in ipairs(golden_pages) do
-                local map = Loader.loadPageMap(page.image_path)
+                local map = Loader.loadPageMap(page.image_path, { mode = page.reading_order })
                 assert.is_true(map.w > 0 and map.h > 0)
                 assert.is_true(map.native_w > 0 and map.native_h > 0)
                 assert.is_true(map.ink > 0)
@@ -75,7 +93,7 @@ describe("Manga dataset golden set panel detection", function()
     local rasetugari_page = Manifest.getPage("rasetugari", 1)
     if rasetugari_page then
         it("successfully identifies multi-panel layout on rasetugari page 1", function()
-            local map = Loader.loadPageMap(rasetugari_page.image_path)
+            local map = Loader.loadPageMap(rasetugari_page.image_path, { mode = rasetugari_page.reading_order })
             local raw_panels = Segmenter.segment(map, { mode = "manga" })
             local detected = Geometry.sortReadingOrder(raw_panels, "manga")
             local result = Evaluator.evaluate(rasetugari_page.frames, detected)
