@@ -77,6 +77,39 @@ as skipped. The loader keeps one page map in memory; under LuaJIT it uses the
 same byte-array storage as the reader. Preload real FFI for a native-array run:
 `luajit -l ffi tests/run_tests.lua`.
 
+To compare component detection speed and exact output against the revision
+before the neighbor-scan optimization:
+
+```bash
+git show c2a2e29:src/_componentdetector.lua > /tmp/component-reference.lua
+MAGICK_THREAD_LIMIT=1 luajit tools/benchmark_component_scan.lua /tmp/component-reference.lua
+```
+
+An optional final argument limits the run to the first N pages of each book.
+The tool alternates old/new execution order over four runs per page, reports
+mean detector CPU time per book, and fails if panel coordinates, ordering, or
+fallback decisions differ. Image decoding is outside the timed region. It
+retains one page map and separate scratch arrays for the two detectors; it
+does not modify benchmark records. These are host detection measurements,
+not end-to-end page-turn measurements on an e-reader.
+
+Host LuaJIT comparison on 2026-09-12 against `c2a2e29` (four runs per
+implementation per page; all 764 pages matched exactly):
+
+| Dataset | Pages | Before (ms/page) | After (ms/page) | CPU time reduction |
+| --- | ---: | ---: | ---: | ---: |
+| Bloom Into You Vol. 8 | 213 | 51.959 | 38.940 | 25.1% |
+| Miss Kobayashi's Dragon Maid Vol. 2 | 143 | 50.759 | 38.923 | 23.3% |
+| Komi Can't Communicate Vol. 1 | 190 | 58.054 | 42.933 | 26.0% |
+| Scott Pilgrim Vol. 5 | 218 | 65.895 | 51.164 | 22.4% |
+
+The change adds no buffers and preserves traversal order and detector settings.
+Validation also passed all 241 LuaJIT tests with native FFI and required datasets,
+the plain-Lua suite, and 400 randomized old/new comparisons including hole
+detection and changing map dimensions. No benchmark records were rewritten.
+Total KOReader memory use and page-turn latency on a 300 MB device still need
+hardware measurement.
+
 ### Evaluate the Curated Golden Set
 ```bash
 lua tools/benchmark_panels.lua

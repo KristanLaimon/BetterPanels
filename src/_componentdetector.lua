@@ -168,9 +168,13 @@ local function collectComponents(map, min_side, min_area)
                 if y > bottom then
                     bottom = y
                 end
+                -- Clip columns once per pixel, then walk contiguous offsets.
+                -- Keep the same 8-connected traversal order without repeating
+                -- column bounds and row-offset arithmetic for every neighbor.
+                local first_x, last_x = math.max(0, x - 1), math.min(width - 1, x + 1)
                 for ny = math.max(0, y - 1), math.min(height - 1, y + 1) do
-                    for nx = math.max(0, x - 1), math.min(width - 1, x + 1) do
-                        local neighbor = ny * width + nx
+                    local row = ny * width
+                    for neighbor = row + first_x, row + last_x do
                         if seen[neighbor] == 0 and data[neighbor] == 1 then
                             seen[neighbor] = 1
                             queue[tail] = neighbor
