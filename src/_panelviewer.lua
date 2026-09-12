@@ -514,7 +514,7 @@ end
 --- @param ges table Gesture event with `direction`.
 --- @return boolean|nil handled Whether the gesture was consumed.
 function PanelViewer:onSwipe(arg, ges)
-    if isLeftEdgeGesture(ges) then
+    if self.kobo_vertical_gesture ~= false and isLeftEdgeGesture(ges) then
         if ges.direction == "north" then
             self:onZoomIn(self.mousewheel_zoom_step or 0.2)
             return true
@@ -664,6 +664,91 @@ end
 
 function PanelViewer:onGotoPosRel(diff)
     return self:onGotoViewRel(diff)
+end
+
+--- Move to the next or previous panel when navigating left ("A" or Arrow Left),
+--- respecting the active reading mode (manga vs comic).
+---
+--- In Manga mode (right-to-left), moving left advances to the next panel.
+--- In Comic mode (left-to-right), moving left retreats to the previous panel.
+---
+--- @return boolean|nil handled Whether the navigation event was consumed.
+function PanelViewer:onPanelNavLeft()
+    if self.reading_mode == "manga" then
+        return self:onShowNextImage()
+    end
+    return self:onShowPrevImage()
+end
+
+--- Move to the next or previous panel when navigating right ("D" or Arrow Right),
+--- respecting the active reading mode (manga vs comic).
+---
+--- In Manga mode (right-to-left), moving right retreats to the previous panel.
+--- In Comic mode (left-to-right), moving right advances to the next panel.
+---
+--- @return boolean|nil handled Whether the navigation event was consumed.
+function PanelViewer:onPanelNavRight()
+    if self.reading_mode == "manga" then
+        return self:onShowPrevImage()
+    end
+    return self:onShowNextImage()
+end
+
+--- Intercept cursor pan events so left/right navigation navigates panels while zoomed.
+---
+--- @param direction string Panning direction ("left", "right", "up", "down").
+--- @return boolean handled Whether the event was handled.
+function PanelViewer:onCursorPan(direction)
+    if direction == "left" then
+        return self:onPanelNavLeft()
+    elseif direction == "right" then
+        return self:onPanelNavRight()
+    end
+    if ImageViewer.onCursorPan then
+        return ImageViewer.onCursorPan(self, direction)
+    end
+    return true
+end
+
+--- Keyboard handler for panel navigation with "A", "D", and left/right arrow keys.
+---
+--- @param key string|table Key name or KOReader Key event object.
+--- @return boolean|nil handled
+function PanelViewer:onKeyPress(key)
+    local key_name
+    local has_modifier = false
+    if type(key) == "string" then
+        key_name = key
+    elseif type(key) == "table" then
+        key_name = key.key
+        if key.modifiers then
+            for _, pressed in pairs(key.modifiers) do
+                if pressed then
+                    has_modifier = true
+                    break
+                end
+            end
+        end
+    end
+    if not has_modifier and key_name then
+        if key_name == "Left" or key_name == "a" or key_name == "A" then
+            return self:onPanelNavLeft()
+        elseif key_name == "Right" or key_name == "d" or key_name == "D" then
+            return self:onPanelNavRight()
+        end
+    end
+    if ImageViewer.onKeyPress then
+        return ImageViewer.onKeyPress(self, key)
+    end
+    return true
+end
+
+--- Forward key repeat events identically to key press.
+---
+--- @param key string|table Key name or KOReader Key event object.
+--- @return boolean|nil handled
+function PanelViewer:onKeyRepeat(key)
+    return self:onKeyPress(key)
 end
 
 --- Treat mouse-wheel pan events from KOReader/SDL as image zoom in panel mode.
@@ -1400,18 +1485,25 @@ function PanelViewer:init()
     self:replaceButtonTable()
     self:update()
 
+    self.key_events = self.key_events or {}
     local ok_dev, Device = pcall(require, "device")
-    if ok_dev and Device then
-        self.key_events = self.key_events or {}
-        local pg_back = (Device.input and Device.input.group and Device.input.group.PgBack) or { "LPgBack", "RPgBack" }
-        local pg_fwd = (Device.input and Device.input.group and Device.input.group.PgFwd) or { "LPgFwd", "RPgFwd" }
-        local back = (Device.input and Device.input.group and Device.input.group.Back) or { "Back" }
-
-        self.key_events.Close = self.key_events.Close or { { back } }
-        self.key_events.ShowPrevImage = { { pg_back, "PageUp" } }
-        self.key_events.ShowNextImage = { { pg_fwd, "PageDown", " " } }
-        self.key_events.Home = self.key_events.Home or { { "Home" } }
+    local pg_back = { "LPgBack", "RPgBack" }
+    local pg_fwd = { "LPgFwd", "RPgFwd" }
+    local back = { "Back" }
+    if ok_dev and Device and Device.input and Device.input.group then
+        pg_back = Device.input.group.PgBack or pg_back
+        pg_fwd = Device.input.group.PgFwd or pg_fwd
+        back = Device.input.group.Back or back
     end
+
+    self.key_events.Close = self.key_events.Close or { { back } }
+    self.key_events.ShowPrevImage = { { pg_back }, { "PageUp" } }
+    self.key_events.ShowNextImage = { { pg_fwd }, { "PageDown" }, { " " } }
+    self.key_events.Home = self.key_events.Home or { { "Home" } }
+    self.key_events.PanLeft = nil
+    self.key_events.PanRight = nil
+    self.key_events.PanelNavLeft = { { "Left" }, { "a" }, { "A" } }
+    self.key_events.PanelNavRight = { { "Right" }, { "d" }, { "D" } }
 end
 
 --- Close ImageViewer resources while guarding its final dirty-region callback.

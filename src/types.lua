@@ -68,6 +68,7 @@
 --- @field panel_margin_ratio number Zoom-out fraction the "margin" crop mode applies to non-full-page panels.
 --- @field invert_swipe boolean
 --- @field invert_taps boolean
+--- @field kobo_vertical_gesture boolean Whether vertical swipes on the left edge zoom in/out (Kobo-style).
 --- @field remember_doc_settings boolean Whether per-document settings (mode, nav mode, progress bar, crop mode) are saved & restored.
 --- @field doc_settings table<string, table>|nil Per-document settings map fallback.
 --- @field progress_bar_visible boolean
@@ -151,6 +152,7 @@
 --- @field invert_taps boolean Whether side tap direction is inverted.
 --- @field tap_navigation boolean Whether tapping the left/right screen edges navigates between panels.
 --- @field swipe_navigation boolean Whether horizontal swipes navigate between panels.
+--- @field kobo_vertical_gesture boolean Whether vertical swipes on the left edge zoom in/out (Kobo-style).
 --- @field more_config_callback fun(viewer:PanelViewer):boolean|nil
 --- @field progress_bar_visible boolean Whether the bottom progress bar is shown.
 --- @field nav_transition_mode PPNavTransitionMode Classic, Smooth camera-pan, or framebuffer Animated navigation.

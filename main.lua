@@ -287,6 +287,14 @@ function PanelsPlus:setSwipeNavigation(enabled)
     self:saveSettings()
 end
 
+--- Enable or disable Kobo-like vertical edge gestures for zooming in/out.
+---
+--- @param enabled any Truthy value enables Kobo-style left-edge vertical zoom.
+function PanelsPlus:setKoboVerticalGesture(enabled)
+    self.settings.kobo_vertical_gesture = enabled and true or false
+    self:saveSettings()
+end
+
 --- Set whether the panel viewer bottom progress bar is visible.
 ---
 --- @param visible any Truthy value shows the progress bar.

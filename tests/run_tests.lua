@@ -22,6 +22,7 @@ local spec_modules = {
     "tests.spec.viewer_controller_rotation_spec",
     "tests.spec.viewer_controller_more_config_spec",
     "tests.spec.panelviewer_leftedge_spec",
+    "tests.spec.panelviewer_keyboard_nav_spec",
     "tests.spec.panelviewer_tapnav_spec",
     "tests.spec.panelviewer_transform_spec",
     "tests.spec.panelviewer_margin_spec",

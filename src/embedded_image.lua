@@ -288,6 +288,7 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         invert_taps = self.settings.invert_taps == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
+        kobo_vertical_gesture = self.settings.kobo_vertical_gesture ~= false,
         progress_bar_visible = self.settings.progress_bar_visible ~= false,
         hold_text_selection = false,
         image_rotation = self.settings.image_rotation,

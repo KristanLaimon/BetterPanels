@@ -445,6 +445,27 @@ function ViewerController:toggleViewerSwipeNavigation(viewer)
     return true
 end
 
+--- Set whether Kobo-like vertical edge gestures for zooming in/out are enabled.
+---
+--- @param enabled any Truthy value enables Kobo-style left-edge vertical zoom.
+function ViewerController:setKoboVerticalGesture(enabled)
+    self.settings.kobo_vertical_gesture = enabled and true or false
+    if self.saveSettings then
+        self:saveSettings()
+    end
+end
+
+--- Toggle Kobo-like vertical edge gestures for zooming in/out, from an open
+--- viewer, in place.
+---
+--- @param viewer PanelViewer Active panel viewer instance.
+--- @return boolean handled Always true for viewer callback dispatch.
+function ViewerController:toggleViewerKoboVerticalGesture(viewer)
+    self:setKoboVerticalGesture(self.settings.kobo_vertical_gesture == false)
+    viewer.kobo_vertical_gesture = self.settings.kobo_vertical_gesture
+    return true
+end
+
 --- Return whether Animated mode should play a framebuffer page transition.
 function ViewerController:isPageTurnAnimationActive(viewer)
     return Device:canDoSwipeAnimation()
@@ -590,6 +611,25 @@ function ViewerController:showMoreConfigMenu(viewer)
         {
             text = categorizedText(
                 _("Navigation"),
+                _("Kobo-like edge vertical gesture (Actual: ")
+                    .. (controller.settings.kobo_vertical_gesture ~= false and _("true") or _("false"))
+                    .. ")"
+            ),
+            checked_func = function()
+                return controller.settings.kobo_vertical_gesture ~= false
+            end,
+            callback = function()
+                controller:toggleViewerKoboVerticalGesture(viewer)
+                UIManager:close(menu)
+                controller:showMoreConfigMenu(viewer)
+            end,
+            help_text = _(
+                "Swipe vertically within the left 25% of the screen to zoom in (swipe up) or zoom out (swipe down), similar to Kobo's edge gesture. Only active at standard zoom."
+            ),
+        },
+        {
+            text = categorizedText(
+                _("Navigation"),
                 _("Remember per-document settings (Actual: ")
                     .. (controller.settings.remember_doc_settings ~= false and _("true") or _("false"))
                     .. ")"
@@ -726,6 +766,7 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         invert_taps = self.settings.invert_taps == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
+        kobo_vertical_gesture = self.settings.kobo_vertical_gesture ~= false,
         progress_bar_visible = self.settings.progress_bar_visible ~= false,
         hold_text_selection = self.settings.hold_text_selection ~= false,
         ocr_debug_mode = self.settings.ocr_debug_mode == true,

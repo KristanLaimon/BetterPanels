@@ -102,4 +102,14 @@ describe("PanelViewer:onSwipe left-edge zoom", function()
 
         assert.is_true(viewer.onZoomIn:called())
     end)
+
+    it("does not zoom on north/south left-edge swipe when kobo_vertical_gesture is disabled", function()
+        local viewer = newViewer({ kobo_vertical_gesture = false })
+
+        viewer:onSwipe(nil, { direction = "north", pos = { x = 100, y = 400 } })
+        viewer:onSwipe(nil, { direction = "south", pos = { x = 100, y = 400 } })
+
+        assert.is_false(viewer.onZoomIn:called())
+        assert.is_false(viewer.onZoomOut:called())
+    end)
 end)

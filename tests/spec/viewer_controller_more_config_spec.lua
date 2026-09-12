@@ -83,10 +83,31 @@ describe("ViewerController page-turn animation settings", function()
             assert.equals("[Navigation]: Swipe to navigate (Actual: true)", items[2].text)
             assert.equals("[Navigation]: Invert panel swipe direction (Actual: false)", items[3].text)
             assert.equals("[Navigation]: Invert tap screens direction (Actual: false)", items[4].text)
-            assert.equals("[Navigation]: Remember per-document settings (Actual: true)", items[5].text)
-            assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[6].text)
-            assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[7].text)
+            assert.equals("[Navigation]: Kobo-like edge vertical gesture (Actual: true)", items[5].text)
+            assert.equals("[Navigation]: Remember per-document settings (Actual: true)", items[6].text)
+            assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[7].text)
+            assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[8].text)
         end)
+    end)
+
+    it("toggles kobo-like edge vertical gesture in place", function()
+        local controller = makeController({ kobo_vertical_gesture = true })
+        local viewer = { kobo_vertical_gesture = true }
+
+        controller:showMoreConfigMenu(viewer)
+        local items = UIManager._last_shown.item_table
+        assert.equals("[Navigation]: Kobo-like edge vertical gesture (Actual: true)", items[5].text)
+        assert.is_true(items[5].checked_func())
+
+        -- Click the option to toggle it off
+        items[5].callback()
+        assert.is_false(controller.settings.kobo_vertical_gesture)
+        assert.is_false(viewer.kobo_vertical_gesture)
+
+        -- Check the re-opened menu item state
+        local updated_items = UIManager._last_shown.item_table
+        assert.equals("[Navigation]: Kobo-like edge vertical gesture (Actual: false)", updated_items[5].text)
+        assert.is_false(updated_items[5].checked_func())
     end)
 
     it("keeps later groups visible when page animations are unsupported", function()
@@ -106,9 +127,9 @@ describe("ViewerController page-turn animation settings", function()
 
         controller:showMoreConfigMenu({ nav_transition_mode = "classic" })
         local items = UIManager._last_shown.item_table
-        assert.equals(7, #items)
-        assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[6].text)
-        assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[7].text)
+        assert.equals(8, #items)
+        assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[7].text)
+        assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[8].text)
 
         Device.canDoSwipeAnimation = old_can_do_swipe_animation
     end)

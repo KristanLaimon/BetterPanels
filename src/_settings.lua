@@ -19,6 +19,7 @@ local Settings = {
         invert_taps = false,
         tap_navigation = false,
         swipe_navigation = true,
+        kobo_vertical_gesture = true,
         remember_doc_settings = true,
         doc_settings = {},
         progress_bar_visible = true,

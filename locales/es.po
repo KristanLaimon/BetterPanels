@@ -102,6 +102,12 @@ msgstr "Invertir dirección de toques"
 msgid "Invert tap screens direction (Actual: "
 msgstr "Invertir dirección de toques (Actual: "
 
+msgid "Kobo-like edge vertical gesture (Actual: "
+msgstr "Gesto vertical en el borde tipo Kobo (Actual: "
+
+msgid "Swipe vertically within the left 25% of the screen to zoom in (swipe up) or zoom out (swipe down), similar to Kobo's edge gesture. Only active at standard zoom."
+msgstr "Desliza verticalmente en el 25% izquierdo de la pantalla para acercar (deslizar hacia arriba) o alejar (deslizar hacia abajo), similar al gesto en el borde de Kobo. Solo activo con zoom estándar."
+
 msgid "Remember per-document settings"
 msgstr "Recordar ajustes por documento"
 
