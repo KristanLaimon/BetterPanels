@@ -9,24 +9,18 @@ local Evaluator = require("tests.dataset-mangas.panel_evaluator")
 local ComponentDetector = require("src._componentdetector")
 local BenchmarkTracker = require("tests.dataset-mangas.benchmark_tracker")
 
-local DATASETS = {
-    { title = "Bloom_Into_You_Vol_8", type = "manga", pages = 213, panels = 726 },
-    { title = "Miss_Kobayashi's_Dragon_Maid_Vol_2", type = "manga", pages = 143, panels = 586 },
-    {
-        title = "Komi_Can't_Communicate_Vol_1",
-        type = "manga",
-        pages = 190,
-        panels = 747,
-        gate_95 = true,
-    },
-    {
-        title = "Scott_Pilgrim_Vol_5",
-        type = "comic",
-        pages = 218,
-        panels = 838,
-        gate_95 = true,
-    },
-}
+local DATASETS = require("tests.dataset-mangas.production_datasets")
+local selected_dataset = os.getenv("PANELSPLUS_TEST_DATASET")
+if selected_dataset then
+    local selected = {}
+    for _, dataset in ipairs(DATASETS) do
+        if dataset.title == selected_dataset then
+            selected[#selected + 1] = dataset
+        end
+    end
+    assert.equals(1, #selected, "Unknown production dataset: " .. selected_dataset)
+    DATASETS = selected
+end
 
 local function findBook(title)
     for _, book in ipairs(Manifest.loadManga()) do

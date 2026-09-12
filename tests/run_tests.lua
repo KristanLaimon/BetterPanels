@@ -61,6 +61,28 @@ if dataset_pipe then
     dataset_pipe:close()
 end
 
+-- Machine-readable discovery for the parallel runner; do not execute specs.
+if arg[1] == "--list" then
+    for _, mod in ipairs(spec_modules) do
+        print(mod)
+    end
+    os.exit(0)
+elseif arg[1] == "--list-datasets" then
+    for _, dataset in ipairs(require("tests.dataset-mangas.production_datasets")) do
+        print(dataset.title)
+    end
+    os.exit(0)
+end
+
+if #arg > 0 then
+    spec_modules = {}
+    for _, path in ipairs(arg) do
+        assert(not path:match("^%-"), "Unknown option: " .. path)
+        local mod = path:gsub("^%./", ""):gsub("%.lua$", ""):gsub("[/\\]", ".")
+        spec_modules[#spec_modules + 1] = mod
+    end
+end
+
 for _, mod in ipairs(spec_modules) do
     print("\n== " .. mod .. " ==")
     require(mod)

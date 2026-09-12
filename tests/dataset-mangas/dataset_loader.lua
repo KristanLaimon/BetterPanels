@@ -239,13 +239,19 @@ function DatasetLoader.loadPageMap(image_path, settings)
     if cache_needs_write then
         -- Save to disk cache for near-instant subsequent loads.
         os.execute("mkdir -p " .. cache_dir)
-        local f_out = io.open(disk_cache_path .. ".tmp", "wb")
+        -- Workers can load the same golden page concurrently. Publish complete
+        -- cache files atomically using a unique temporary name per writer.
+        local reserved = os.tmpname()
+        local temporary = disk_cache_path .. reserved:match("[^/]+$")
+        local f_out = io.open(temporary, "wb")
         if f_out then
             f_out:write(string.format("%d %d %d %d %d\n", native_w, native_h, target_w, target_h, bg))
             f_out:write(raw)
             f_out:close()
-            os.rename(disk_cache_path .. ".tmp", disk_cache_path)
+            os.rename(temporary, disk_cache_path)
         end
+        os.remove(temporary)
+        os.remove(reserved)
     end
 
     local inverted = bg < 128

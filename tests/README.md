@@ -27,11 +27,25 @@ tests/
 
 ## Running the Tests
 
-### 1. Fast Unit Test Suite
-Runs all 22 test specifications in under 2 seconds:
+### 1. Test Suite
 ```bash
-lua tests/run_tests.lua
+./run-tests.sh --quick          # Parallel tests, skipping Lua lint/format checks
+./run-tests.sh --quick -j 2     # Limit to two workers
+./run-tests.sh --quick -j 1     # Run jobs sequentially
+./run-tests.sh --quick tests/spec/geometry_spec.lua
 ```
+
+The shell runner requires Python 3.9+ and defaults to at most four Lua workers.
+Each full-volume production benchmark runs in its own process. Golden-page and
+per-manga specs run as separate jobs; ordinary unit tests stay together. All
+pages and accuracy gates are retained. Output is grouped by completed job, with
+elapsed times and a failing exit status if any worker fails. More workers use
+more memory. ImageMagick defaults to one thread per worker; an explicit
+`MAGICK_THREAD_LIMIT` is respected.
+
+`lua tests/run_tests.lua` still runs the complete suite sequentially without the
+Python scheduler. It also accepts one or more spec paths for targeted runs.
+Full local volumes can take minutes; public clones skip unavailable volumes.
 
 ### 2. Code Quality and Linter
 Formats with StyLua and validates with Luacheck:

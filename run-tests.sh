@@ -25,6 +25,7 @@ Options:
   -q, --quick      Skip lint/format checks and run Lua tests immediately
   -c, --check-only Run only StyLua formatter and Luacheck linter
   -p, --python     Run only the Python annotator unit tests
+  -j, --jobs N     Maximum parallel Lua workers (default: up to 4 CPUs; 1 for serial)
 
 Examples:
   ./run-tests.sh
@@ -77,11 +78,12 @@ if [ "$QUICK" = false ]; then
 fi
 
 if command -v python3 &>/dev/null && [ -f "tests/dataset-mangas/annotator/test_annotator.py" ]; then
-    echo "==> [2/3] Running Python Annotator Tests..."
+    echo "==> [2/3] Running Python Runner and Annotator Tests..."
+    python3 -m unittest discover -s tests -p test_parallel_runner.py
     python3 -m unittest tests/dataset-mangas/annotator/test_annotator.py
 fi
 
 echo "==> [3/3] Running Lua Test Suite & Manga Dataset Specs..."
-lua tests/run_tests.lua "${FORWARD_ARGS[@]}"
+python3 tests/run_parallel.py "${FORWARD_ARGS[@]}"
 
 echo "==> All test suites passed successfully!"
