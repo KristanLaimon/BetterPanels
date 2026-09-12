@@ -735,6 +735,28 @@ function PanelViewer:onKeyPress(key)
             return self:onPanelNavLeft()
         elseif key_name == "Right" or key_name == "d" or key_name == "D" then
             return self:onPanelNavRight()
+        elseif key_name == "LPgFwd" or key_name == "RPgFwd" or key_name == "PageDown" or key_name == " " then
+            return self:onShowNextImage()
+        elseif key_name == "LPgBack" or key_name == "RPgBack" or key_name == "PageUp" then
+            return self:onShowPrevImage()
+        end
+
+        local ok_dev, Device = pcall(require, "device")
+        if ok_dev and Device and Device.input and Device.input.group then
+            if Device.input.group.PgFwd then
+                for _, code in ipairs(Device.input.group.PgFwd) do
+                    if key_name == code then
+                        return self:onShowNextImage()
+                    end
+                end
+            end
+            if Device.input.group.PgBack then
+                for _, code in ipairs(Device.input.group.PgBack) do
+                    if key_name == code then
+                        return self:onShowPrevImage()
+                    end
+                end
+            end
         end
     end
     if ImageViewer.onKeyPress then
@@ -1502,6 +1524,8 @@ function PanelViewer:init()
     self.key_events.Home = self.key_events.Home or { { "Home" } }
     self.key_events.PanLeft = nil
     self.key_events.PanRight = nil
+    self.key_events.ZoomIn = nil
+    self.key_events.ZoomOut = nil
     self.key_events.PanelNavLeft = { { "Left" }, { "a" }, { "A" } }
     self.key_events.PanelNavRight = { { "Right" }, { "d" }, { "D" } }
 end
