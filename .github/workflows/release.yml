@@ -3,6 +3,7 @@ name: Build and draft release
 on:
   push:
     tags:
+      - "v*.*.*"
       - "v*.*.*-*"
   workflow_dispatch:
 
@@ -37,21 +38,21 @@ jobs:
             tag="$(
               gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" \
                 --jq '.[] | .ref | sub("^refs/tags/"; "")' |
-                grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-.+' |
+                grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$' |
                 sort -V |
                 tail -n 1 || true
             )"
 
             if [[ -z "${tag}" ]]; then
-              echo "::error::No GitHub release tag matching v#.#.#-Whatever exists."
+              echo "::error::No GitHub release tag matching v#.#.# or v#.#.#-Whatever exists."
               exit 1
             fi
           else
             tag="${GITHUB_REF_NAME}"
           fi
 
-          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.+ ]]; then
-            echo "::error::Release tags must look like v#.#.#-Whatever, for example v1.2.3-Beta."
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "::error::Release tags must look like v#.#.# or v#.#.#-Whatever, for example v1.4.0 or v1.2.3-Beta."
             exit 1
           fi
 
@@ -124,15 +125,34 @@ jobs:
             range="${COMMIT}"
           fi
 
-          {
-            echo "Built from tag: ${TAG}"
-            echo
-            echo "## Commits"
-            git log --format="- %h %s (%an)" "${range}"
-            echo
-            echo "## Authors"
-            git log --format="%an" "${range}" | sort -u | sed 's/^/- /'
-          } > release-notes.md
+          notes_candidate=""
+          tag_clean="${TAG#v}"
+          tag_under="${tag_clean//./_}"
+          for candidate in \
+            "docs/releases/v${tag_under}_draft/${TAG}.github.md" \
+            "docs/releases/v${tag_under}_draft/${TAG}.md" \
+            "docs/releases/${TAG}.github.md" \
+            "docs/releases/${TAG}.md"; do
+            if [[ -f "${candidate}" ]]; then
+              notes_candidate="${candidate}"
+              break
+            fi
+          done
+
+          if [[ -n "${notes_candidate}" ]]; then
+            echo "Using release notes from ${notes_candidate}"
+            cp "${notes_candidate}" release-notes.md
+          else
+            {
+              echo "Built from tag: ${TAG}"
+              echo
+              echo "## Commits"
+              git log --format="- %h %s (%an)" "${range}"
+              echo
+              echo "## Authors"
+              git log --format="%an" "${range}" | sort -u | sed 's/^/- /'
+            } > release-notes.md
+          fi
 
       - name: Create draft release
         id: create_release
