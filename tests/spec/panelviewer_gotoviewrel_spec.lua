@@ -121,3 +121,55 @@ describe("PanelViewer:onGotoViewRel end-to-end boundary crossing", function()
         assert.is_false(boundary_spy:called(), "boundary_callback should not fire mid-sequence")
     end)
 end)
+
+describe("PanelViewer physical button and Bluetooth reader action handlers", function()
+    it("routes forward action events to onShowNextImage", function()
+        local next_spy, prev_spy = spy(), spy()
+        local viewer = PanelViewer:new({ onShowNextImage = next_spy, onShowPrevImage = prev_spy })
+
+        viewer:onGotoNextPage()
+        viewer:onPageForward()
+        viewer:onShowNextPage()
+        viewer:onPhysicalPageForward()
+        viewer:onNextPage()
+
+        assert.equals(5, next_spy:callCount())
+        assert.is_false(prev_spy:called())
+    end)
+
+    it("routes backward action events to onShowPrevImage", function()
+        local next_spy, prev_spy = spy(), spy()
+        local viewer = PanelViewer:new({ onShowNextImage = next_spy, onShowPrevImage = prev_spy })
+
+        viewer:onGotoPrevPage()
+        viewer:onPageBackward()
+        viewer:onShowPrevPage()
+        viewer:onPhysicalPageBackward()
+        viewer:onPrevPage()
+
+        assert.is_false(next_spy:called())
+        assert.equals(5, prev_spy:callCount())
+    end)
+
+    it("routes relative page and position jump events through onGotoViewRel", function()
+        local next_spy, prev_spy = spy(), spy()
+        local viewer = PanelViewer:new({ onShowNextImage = next_spy, onShowPrevImage = prev_spy })
+
+        viewer:onGotoPageRel(1)
+        viewer:onGotoPosRel(-1)
+
+        assert.equals(1, next_spy:callCount())
+        assert.equals(1, prev_spy:callCount())
+    end)
+
+    it("initializes key_events with physical button groups and bluetooth keys", function()
+        local viewer = PanelViewer:new({})
+        viewer:init()
+
+        assert.is_not_nil(viewer.key_events)
+        assert.is_not_nil(viewer.key_events.ShowPrevImage)
+        assert.is_not_nil(viewer.key_events.ShowNextImage)
+        assert.is_not_nil(viewer.key_events.Close)
+        assert.is_not_nil(viewer.key_events.Home)
+    end)
+end)

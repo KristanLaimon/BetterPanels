@@ -615,6 +615,57 @@ function PanelViewer:onGotoViewRel(diff)
     return self:onShowPrevImage()
 end
 
+--- Page-forward event handlers for physical buttons and Bluetooth page turners.
+function PanelViewer:onGotoNextPage()
+    return self:onShowNextImage()
+end
+
+function PanelViewer:onPageForward()
+    return self:onShowNextImage()
+end
+
+function PanelViewer:onShowNextPage()
+    return self:onShowNextImage()
+end
+
+function PanelViewer:onPhysicalPageForward()
+    return self:onShowNextImage()
+end
+
+function PanelViewer:onNextPage()
+    return self:onShowNextImage()
+end
+
+--- Page-backward event handlers for physical buttons and Bluetooth page turners.
+function PanelViewer:onGotoPrevPage()
+    return self:onShowPrevImage()
+end
+
+function PanelViewer:onPageBackward()
+    return self:onShowPrevImage()
+end
+
+function PanelViewer:onShowPrevPage()
+    return self:onShowPrevImage()
+end
+
+function PanelViewer:onPhysicalPageBackward()
+    return self:onShowPrevImage()
+end
+
+function PanelViewer:onPrevPage()
+    return self:onShowPrevImage()
+end
+
+--- Relative page and position jump event handlers.
+function PanelViewer:onGotoPageRel(diff)
+    return self:onGotoViewRel(diff)
+end
+
+function PanelViewer:onGotoPosRel(diff)
+    return self:onGotoViewRel(diff)
+end
+
 --- Treat mouse-wheel pan events from KOReader/SDL as image zoom in panel mode.
 ---
 --- @param arg any KOReader gesture argument.
@@ -1348,6 +1399,19 @@ function PanelViewer:init()
     end
     self:replaceButtonTable()
     self:update()
+
+    local ok_dev, Device = pcall(require, "device")
+    if ok_dev and Device then
+        self.key_events = self.key_events or {}
+        local pg_back = (Device.input and Device.input.group and Device.input.group.PgBack) or { "LPgBack", "RPgBack" }
+        local pg_fwd = (Device.input and Device.input.group and Device.input.group.PgFwd) or { "LPgFwd", "RPgFwd" }
+        local back = (Device.input and Device.input.group and Device.input.group.Back) or { "Back" }
+
+        self.key_events.Close = self.key_events.Close or { { back } }
+        self.key_events.ShowPrevImage = { { pg_back, "PageUp" } }
+        self.key_events.ShowNextImage = { { pg_fwd, "PageDown", " " } }
+        self.key_events.Home = self.key_events.Home or { { "Home" } }
+    end
 end
 
 --- Close ImageViewer resources while guarding its final dirty-region callback.
