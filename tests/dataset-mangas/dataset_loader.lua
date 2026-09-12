@@ -75,7 +75,7 @@ local function hasWhiteSeparator(raw, w, h)
     return false
 end
 
-local function estimateBackground(raw, w, h, mode)
+local function estimateBackground(raw, w, h)
     local histogram = {}
     for i = 0, 255 do
         histogram[i] = 0
@@ -112,10 +112,10 @@ local function estimateBackground(raw, w, h, mode)
     for value = 0, 255 do
         seen = seen + histogram[value]
         if seen >= half then
-            -- Western comics frequently let gray artwork reach every outer
+            -- Cropped manga and comics can let gray artwork reach every outer
             -- edge while retaining white, nearly page-spanning gutters. In
             -- that case the border median describes panel fill, not paper.
-            if mode == "comic" and value < 224 and hasWhiteSeparator(raw, w, h) then
+            if value >= 32 and value < 224 and hasWhiteSeparator(raw, w, h) then
                 return 255
             end
             return value
@@ -234,7 +234,7 @@ function DatasetLoader.loadPageMap(image_path, settings)
     -- Background policy depends on reading material type, while the cached
     -- raster does not. Recompute it after reading the shared grayscale bytes
     -- so changing Manga/Comic metadata takes effect immediately.
-    bg = estimateBackground(raw, target_w, target_h, settings.mode)
+    bg = estimateBackground(raw, target_w, target_h)
 
     if cache_needs_write then
         -- Save to disk cache for near-instant subsequent loads.

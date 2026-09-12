@@ -351,6 +351,9 @@ local function colourDistance(r, g, b, background_r, background_g, background_b)
 end
 
 --- Look for a white separator without allocating another page-sized buffer.
+--- This also recovers paper colour after manga conversions trim the margins.
+--- Preserve near-black backgrounds: white panel interiors can span most of a
+--- page with black gutters, so a bright scanline alone cannot override them.
 local function hasWhiteSeparatorGrey(data, stride, w, h, step)
     local grid_w = math.floor(w / step)
     local grid_h = math.floor(h / step)
@@ -389,7 +392,7 @@ local function hasWhiteSeparatorGrey(data, stride, w, h, step)
     return false
 end
 
-local function estimateBackgroundGrey(data, stride, w, h, step, mode)
+local function estimateBackgroundGrey(data, stride, w, h, step)
     step = step or 1
     local histogram = {}
     for value = 0, 255 do
@@ -426,7 +429,7 @@ local function estimateBackgroundGrey(data, stride, w, h, step, mode)
     for value = 0, 255 do
         seen = seen + histogram[value]
         if seen >= half then
-            if mode == "comic" and value < 224 and hasWhiteSeparatorGrey(data, stride, w, h, step) then
+            if value >= 32 and value < 224 and hasWhiteSeparatorGrey(data, stride, w, h, step) then
                 return 255
             end
             return value
@@ -437,9 +440,9 @@ end
 
 --- Estimate the page background colour from its outer border.
 ---
---- The border of a comic page is the page's own paper (or its inked backdrop),
---- never panel content, so its per-channel median is a reliable background
---- reference for normal, inverted, and coloured artwork.
+--- Use the border median unless a spanning white gutter contradicts it.
+--- Converters can trim the paper margins right down to the artwork in both
+--- manga and comics, so reading direction must not select the paper colour.
 ---
 --- @param sample fun(x:integer, y:integer):integer,integer,integer RGB accessor.
 --- @param w integer Source width.
@@ -489,7 +492,7 @@ local function hasWhiteSeparator(sample, w, h, step)
     return false
 end
 
-local function estimateBackground(sample, w, h, step, mode)
+local function estimateBackground(sample, w, h, step)
     step = step or 1
     local red, green, blue = {}, {}, {}
     for value = 0, 255 do
@@ -536,7 +539,8 @@ local function estimateBackground(sample, w, h, step, mode)
     end
 
     local r, g, b = median(red), median(green), median(blue)
-    if mode == "comic" and math.max(r, g, b) < 224 and hasWhiteSeparator(sample, w, h, step) then
+    local brightest = math.max(r, g, b)
+    if brightest >= 32 and brightest < 224 and hasWhiteSeparator(sample, w, h, step) then
         return 255, 255, 255
     end
     return r, g, b
@@ -573,7 +577,7 @@ local function buildMapFromBuffer(
 
     if not is_rgb and kind == "bb8" and raw_data ~= nil and stride ~= nil then
         -- Fast greyscale path (manga / e-ink / black-and-white artwork)
-        local bg_val = estimateBackgroundGrey(raw_data, stride, src_w, src_h, step, settings.mode)
+        local bg_val = estimateBackgroundGrey(raw_data, stride, src_w, src_h, step)
         background = bg_val
         background_r, background_g, background_b = bg_val, bg_val, bg_val
 
@@ -619,7 +623,7 @@ local function buildMapFromBuffer(
         end
     else
         -- Colour-aware path (Western colour comics / colour displays)
-        background_r, background_g, background_b = estimateBackground(sample, src_w, src_h, step, settings.mode)
+        background_r, background_g, background_b = estimateBackground(sample, src_w, src_h, step)
         background = luminance(background_r, background_g, background_b)
 
         if border then

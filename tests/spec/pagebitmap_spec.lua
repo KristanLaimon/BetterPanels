@@ -9,6 +9,59 @@ local describe, it, assert = framework.describe, framework.it, framework.assert
 local PageBitmap = require("src._pagebitmap")
 
 describe("PageBitmap colour-aware background sampling", function()
+    it("detects the same manga panels before and after conversion trims the paper margin", function()
+        local Blitbuffer = require("ffi/blitbuffer")
+        local ComponentDetector = require("src._componentdetector")
+        local settings = { mode = "manga", segment_target_width = 480 }
+        local function image(margin)
+            return {
+                w = 100 + margin * 2,
+                h = 140 + margin * 2,
+                isRGB = function()
+                    return true
+                end,
+                getType = function()
+                    return Blitbuffer.TYPE_BBRGB24
+                end,
+                getRotation = function()
+                    return 0
+                end,
+                getInverse = function()
+                    return 0
+                end,
+                getPixel = function(_, x, y)
+                    x, y = x - margin, y - margin
+                    local paper = x < 0 or y < 0 or x >= 100 or y >= 140 or (x >= 46 and x < 54) or (y >= 66 and y < 74)
+                    local value = paper and 255 or 110
+                    return {
+                        getColorRGB24 = function()
+                            return { r = value, g = value, b = value }
+                        end,
+                    }
+                end,
+                free = function()
+                    error("detection must retain the source for panel crops")
+                end,
+            }
+        end
+
+        local padded = PageBitmap.buildFromBlitbuffer(image(10), settings)
+        local trimmed = PageBitmap.buildFromBlitbuffer(image(0), settings)
+        assert.equals(255, padded.background)
+        assert.equals(255, trimmed.background)
+        local original_panels = ComponentDetector.detectPage(padded, settings)
+        local converted_panels = ComponentDetector.detectPage(trimmed, settings)
+        assert.equals(4, #original_panels)
+        assert.equals(4, #converted_panels)
+        -- Compare centres: the detector's one-cell bleed is clipped at the
+        -- trimmed image edge, but panel locations and manga order must agree.
+        for i, panel in ipairs(original_panels) do
+            local converted = converted_panels[i]
+            assert.near(panel.x + panel.w / 2 - 10, converted.x + converted.w / 2, 1)
+            assert.near(panel.y + panel.h / 2 - 10, converted.y + converted.h / 2, 1)
+        end
+    end)
+
     it("normalizes extracted-image detection to the fixed-page target raster", function()
         local width, height = PageBitmap._detectionRasterSize(1600, 2400, 480)
         assert.equals(480, width)
@@ -157,7 +210,7 @@ describe("PageBitmap colour-aware background sampling", function()
         assert.equals(background.b, b)
     end)
 
-    it("uses a white spanning gutter as Comic paper when gray artwork reaches the border", function()
+    it("uses white gutters as paper after manga conversion trims the margins", function()
         local function sample(_, y)
             if y == 50 then
                 return 255, 255, 255
@@ -165,12 +218,10 @@ describe("PageBitmap colour-aware background sampling", function()
             return 110, 110, 110
         end
 
-        local manga_r = PageBitmap._estimateBackground(sample, 100, 100, nil, "manga")
-        local comic_r, comic_g, comic_b = PageBitmap._estimateBackground(sample, 100, 100, nil, "comic")
-        assert.equals(110, manga_r)
-        assert.equals(255, comic_r)
-        assert.equals(255, comic_g)
-        assert.equals(255, comic_b)
+        local r, g, b = PageBitmap._estimateBackground(sample, 100, 100)
+        assert.equals(255, r)
+        assert.equals(255, g)
+        assert.equals(255, b)
     end)
 
     it("keeps grayscale and RGB separator decisions equivalent at the 80% boundary", function()
@@ -191,10 +242,26 @@ describe("PageBitmap colour-aware background sampling", function()
                     end
                 end
                 local expected = white_count >= 80 and 255 or 110
-                assert.equals(expected, PageBitmap._estimateBackground(sample, 200, 200, step, "comic"))
-                assert.equals(expected, PageBitmap._estimateBackgroundGrey(data, stride, 200, 200, step, "comic"))
-                assert.equals(110, PageBitmap._estimateBackgroundGrey(data, stride, 200, 200, step, "manga"))
+                assert.equals(expected, PageBitmap._estimateBackground(sample, 200, 200, step))
+                assert.equals(expected, PageBitmap._estimateBackgroundGrey(data, stride, 200, 200, step))
             end
+        end
+    end)
+
+    it("preserves near-black paper even when white panel interiors span the page", function()
+        for _, background in ipairs({ 0, 16, 31 }) do
+            local data = {}
+            local function sample(_, y)
+                local value = y == 50 and 255 or background
+                return value, value, value
+            end
+            for y = 0, 99 do
+                for x = 0, 99 do
+                    data[y * 100 + x] = sample(x, y)
+                end
+            end
+            assert.equals(background, PageBitmap._estimateBackground(sample, 100, 100))
+            assert.equals(background, PageBitmap._estimateBackgroundGrey(data, 100, 100, 100))
         end
     end)
 
