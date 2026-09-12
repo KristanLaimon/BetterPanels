@@ -67,6 +67,7 @@
 --- @field crop_mode PPCropMode
 --- @field panel_margin_ratio number Zoom-out fraction the "margin" crop mode applies to non-full-page panels.
 --- @field invert_swipe boolean
+--- @field invert_taps boolean
 --- @field progress_bar_visible boolean
 --- @field nav_transition_mode PPNavTransitionMode Classic, Smooth camera-pan, or framebuffer Animated navigation.
 --- @field nav_animated_panels boolean Whether Animated mode animates panel-to-panel switches.
@@ -145,6 +146,7 @@
 --- @field detector PPDetector Detector the displayed panels came from.
 --- @field detector_cycle_callback fun(viewer:PanelViewer):boolean|nil
 --- @field invert_swipe boolean Whether horizontal swipe direction is inverted.
+--- @field invert_taps boolean Whether side tap direction is inverted.
 --- @field tap_navigation boolean Whether tapping the left/right screen edges navigates between panels.
 --- @field swipe_navigation boolean Whether horizontal swipes navigate between panels.
 --- @field more_config_callback fun(viewer:PanelViewer):boolean|nil

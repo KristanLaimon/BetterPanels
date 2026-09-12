@@ -106,10 +106,18 @@ local function frameSides(queue, count, map_width, box, tolerance)
         local p = queue[index]
         local y = math.floor(p / map_width)
         local x = p - y * map_width
-        if x < scratch_left[y] then scratch_left[y] = x end
-        if x > scratch_right[y] then scratch_right[y] = x end
-        if y < scratch_top[x] then scratch_top[x] = y end
-        if y > scratch_bottom[x] then scratch_bottom[x] = y end
+        if x < scratch_left[y] then
+            scratch_left[y] = x
+        end
+        if x > scratch_right[y] then
+            scratch_right[y] = x
+        end
+        if y < scratch_top[x] then
+            scratch_top[x] = y
+        end
+        if y > scratch_bottom[x] then
+            scratch_bottom[x] = y
+        end
     end
     local sides = 0
     if lineSupport(scratch_left, box.y, box.y + box.h - 1, tolerance) >= 0.80 then
@@ -148,10 +156,18 @@ local function collectComponents(map, min_side, min_area)
                 head = head + 1
                 local y = math.floor(position / width)
                 local x = position - y * width
-                if x < left then left = x end
-                if x > right then right = x end
-                if y < top then top = y end
-                if y > bottom then bottom = y end
+                if x < left then
+                    left = x
+                end
+                if x > right then
+                    right = x
+                end
+                if y < top then
+                    top = y
+                end
+                if y > bottom then
+                    bottom = y
+                end
                 for ny = math.max(0, y - 1), math.min(height - 1, y + 1) do
                     for nx = math.max(0, x - 1), math.min(width - 1, x + 1) do
                         local neighbor = ny * width + nx
@@ -291,21 +307,37 @@ function ComponentDetector.segment(map, settings)
         for _, hole in ipairs(holes) do
             if hole.frame_sides >= 3 then
                 for _, parent in ipairs(framed) do
-                    if hole.w * hole.h < parent.w * parent.h * 0.85
-                        and hole.x >= parent.x - tolerance and hole.y >= parent.y - tolerance
+                    if
+                        hole.w * hole.h < parent.w * parent.h * 0.85
+                        and hole.x >= parent.x - tolerance
+                        and hole.y >= parent.y - tolerance
                         and hole.x + hole.w <= parent.x + parent.w + tolerance
-                        and hole.y + hole.h <= parent.y + parent.h + tolerance then
+                        and hole.y + hole.h <= parent.y + parent.h + tolerance
+                    then
                         local aligned = 0
-                        if math.abs(hole.x-parent.x)<=tolerance then aligned=aligned+1 end
-                        if math.abs(hole.y-parent.y)<=tolerance then aligned=aligned+1 end
-                        if math.abs(hole.x+hole.w-parent.x-parent.w)<=tolerance then aligned=aligned+1 end
-                        if math.abs(hole.y+hole.h-parent.y-parent.h)<=tolerance then aligned=aligned+1 end
-                        if aligned >= 2 then extras[#extras+1]=hole;break end
+                        if math.abs(hole.x - parent.x) <= tolerance then
+                            aligned = aligned + 1
+                        end
+                        if math.abs(hole.y - parent.y) <= tolerance then
+                            aligned = aligned + 1
+                        end
+                        if math.abs(hole.x + hole.w - parent.x - parent.w) <= tolerance then
+                            aligned = aligned + 1
+                        end
+                        if math.abs(hole.y + hole.h - parent.y - parent.h) <= tolerance then
+                            aligned = aligned + 1
+                        end
+                        if aligned >= 2 then
+                            extras[#extras + 1] = hole
+                            break
+                        end
                     end
                 end
             end
         end
-        for _, extra in ipairs(extras) do framed[#framed+1]=extra end
+        for _, extra in ipairs(extras) do
+            framed[#framed + 1] = extra
+        end
     end
     local panels = {}
     for _, box in ipairs(framed) do

@@ -82,8 +82,9 @@ describe("ViewerController page-turn animation settings", function()
             assert.equals("[Navigation]: Tap screen sides to navigate (Actual: false)", items[1].text)
             assert.equals("[Navigation]: Swipe to navigate (Actual: true)", items[2].text)
             assert.equals("[Navigation]: Invert panel swipe direction (Actual: false)", items[3].text)
-            assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[4].text)
-            assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[5].text)
+            assert.equals("[Navigation]: Invert tap screens direction (Actual: false)", items[4].text)
+            assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[5].text)
+            assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[6].text)
         end)
     end)
 
@@ -96,15 +97,16 @@ describe("ViewerController page-turn animation settings", function()
             tap_navigation = false,
             swipe_navigation = true,
             invert_swipe = false,
+            invert_taps = false,
             panel_prerender = true,
             hold_text_selection = true,
         })
 
         controller:showMoreConfigMenu({ nav_transition_mode = "classic" })
         local items = UIManager._last_shown.item_table
-        assert.equals(5, #items)
-        assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[4].text)
-        assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[5].text)
+        assert.equals(6, #items)
+        assert.equals("[Performance]: Pre-render next panel (Actual: true)", items[5].text)
+        assert.equals("[Text Selection]: Touch & hold (Actual: true)", items[6].text)
 
         Device.canDoSwipeAnimation = old_can_do_swipe_animation
     end)

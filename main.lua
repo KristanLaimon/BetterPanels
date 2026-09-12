@@ -160,6 +160,14 @@ function PanelsPlus:setInvertSwipe(invert_swipe)
     self:saveSettings()
 end
 
+--- Toggle whether side tap direction is inverted relative to reading order.
+---
+--- @param invert_taps any Truthy value inverts left/right tap navigation.
+function PanelsPlus:setInvertTaps(invert_taps)
+    self.settings.invert_taps = invert_taps and true or false
+    self:saveSettings()
+end
+
 --- Enable or disable tapping the left/right screen edges to navigate between panels.
 ---
 --- @param enabled any Truthy value enables tap-to-navigate on the screen edges.

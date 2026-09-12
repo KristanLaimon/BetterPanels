@@ -52,6 +52,7 @@ end
 --- @field detector PPDetector Detector the displayed panels came from.
 --- @field detector_cycle_callback fun(viewer:PanelViewer):boolean|nil
 --- @field invert_swipe boolean Whether horizontal swipe direction is inverted.
+--- @field invert_taps boolean Whether side tap direction is inverted.
 --- @field tap_navigation boolean Whether tapping the left/right screen edges navigates between panels.
 --- @field swipe_navigation boolean Whether horizontal swipes navigate between panels.
 --- @field more_config_callback fun(viewer:PanelViewer):boolean|nil
@@ -96,6 +97,7 @@ local PanelViewer = ImageViewer:extend({
     panel_is_full_page = nil,
     detector = "exact",
     invert_swipe = false,
+    invert_taps = false,
     tap_navigation = false,
     swipe_navigation = true,
     more_config_callback = nil,
@@ -455,13 +457,16 @@ local TAP_NAV_ZONE_RATIO = 1 / 3
 ---
 --- Manga (right-to-left) reads forward towards the left edge, so tapping the
 --- left side advances; Comic (left-to-right) reads forward towards the right
---- edge, so tapping the right side advances. Unlike `getNextSwipeDirection()`,
---- this is independent of `invert_swipe`, which only affects the swipe
---- gesture, not tap zones.
+--- edge, so tapping the right side advances. Inverting tap navigation flips
+--- these side assignments.
 ---
 --- @return '"left"'|'"right"' side Tap zone treated as next.
 function PanelViewer:getNextTapSide()
-    return self.reading_mode == "comic" and "right" or "left"
+    local side = self.reading_mode == "comic" and "right" or "left"
+    if self.invert_taps then
+        return side == "right" and "left" or "right"
+    end
+    return side
 end
 
 --- Return whether a tap position falls in the left tap-navigation zone.

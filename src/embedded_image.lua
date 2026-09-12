@@ -285,6 +285,7 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         bleed_ratio = self.settings.panel_bleed_ratio,
         detector = "exact",
         invert_swipe = self.settings.invert_swipe == true,
+        invert_taps = self.settings.invert_taps == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
         progress_bar_visible = self.settings.progress_bar_visible ~= false,

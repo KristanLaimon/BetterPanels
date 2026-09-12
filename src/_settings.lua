@@ -16,6 +16,7 @@ local Settings = {
         crop_mode = "strict",
         panel_margin_ratio = 0.12,
         invert_swipe = false,
+        invert_taps = false,
         tap_navigation = false,
         swipe_navigation = true,
         progress_bar_visible = true,

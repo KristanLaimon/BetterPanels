@@ -566,6 +566,26 @@ function ViewerController:showMoreConfigMenu(viewer)
             help_text = _(
                 "Use this if panel navigation feels reversed on your device. It changes swipe direction only, not panel order."
             ),
+        },
+        {
+            text = categorizedText(
+                _("Navigation"),
+                _("Invert tap screens direction (Actual: ")
+                    .. (controller.settings.invert_taps == true and _("true") or _("false"))
+                    .. ")"
+            ),
+            checked_func = function()
+                return controller.settings.invert_taps == true
+            end,
+            callback = function()
+                controller:setInvertTaps(not controller.settings.invert_taps)
+                viewer.invert_taps = controller.settings.invert_taps
+                UIManager:close(menu)
+                controller:showMoreConfigMenu(viewer)
+            end,
+            help_text = _(
+                "Use this if side tap navigation feels reversed on your device. It changes tap direction only, not panel order."
+            ),
             separator = true,
         },
     }
@@ -684,6 +704,7 @@ function ViewerController:showPanelViewerForPage(page, panels, start_idx, option
         bleed_ratio = self.settings.panel_bleed_ratio,
         detector = "components",
         invert_swipe = self.settings.invert_swipe == true,
+        invert_taps = self.settings.invert_taps == true,
         tap_navigation = self.settings.tap_navigation == true,
         swipe_navigation = self.settings.swipe_navigation ~= false,
         progress_bar_visible = self.settings.progress_bar_visible ~= false,

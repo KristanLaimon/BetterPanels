@@ -96,6 +96,12 @@ msgstr "Invert panel swipe direction"
 msgid "Invert panel swipe direction (Actual: "
 msgstr "Invert panel swipe direction (Actual: "
 
+msgid "Invert tap screens direction"
+msgstr "Invert tap screens direction"
+
+msgid "Invert tap screens direction (Actual: "
+msgstr "Invert tap screens direction (Actual: "
+
 msgid "Page turn animations (Actual: "
 msgstr "Page turn animations (Actual: "
 

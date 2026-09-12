@@ -45,6 +45,14 @@ describe("PanelViewer:getNextTapSide", function()
         viewer = PanelViewer:new({ reading_mode = "manga", invert_swipe = true })
         assert.equals("left", viewer:getNextTapSide())
     end)
+
+    it("inverts side with invert_taps", function()
+        local viewer = PanelViewer:new({ reading_mode = "comic", invert_taps = true })
+        assert.equals("left", viewer:getNextTapSide())
+
+        viewer = PanelViewer:new({ reading_mode = "manga", invert_taps = true })
+        assert.equals("right", viewer:getNextTapSide())
+    end)
 end)
 
 describe("PanelViewer:getNextSwipeDirection", function()
@@ -102,6 +110,15 @@ describe("PanelViewer:onTap side navigation", function()
 
         assert.is_true(viewer.onShowPrevImage:called())
         assert.is_false(viewer.onShowNextImage:called())
+    end)
+
+    it("inverts tap navigation direction when invert_taps is true", function()
+        local viewer = newViewer({ reading_mode = "comic", invert_taps = true })
+
+        viewer:onTap(nil, { pos = { x = 100, y = 400 } })
+
+        assert.is_true(viewer.onShowNextImage:called())
+        assert.is_false(viewer.onShowPrevImage:called())
     end)
 
     it("toggles controls instead of navigating on a center tap", function()
