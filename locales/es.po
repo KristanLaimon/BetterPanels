@@ -3,8 +3,11 @@ msgstr ""
 "Project-Id-Version: mangacomicsmoother\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 
-msgid " fps)"
-msgstr " fps)"
+msgid " (fps)"
+msgstr " (fps)"
+
+msgid "Requires special e-ink devices swipe hardware support (Kindles, Kobos, etc..) not compatible with Android and Desktop (Linux)"
+msgstr "Requiere soporte especial de hardware que solo está en dispositivos e-Ink (Kindles, Kobos, etc..), no compatible con Android y Escritorio (Linux) (Sorry)"
 
 msgid "(Long Press)"
 msgstr "(Mantén pulsado para config.)"

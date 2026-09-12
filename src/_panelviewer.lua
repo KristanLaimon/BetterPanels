@@ -2427,9 +2427,31 @@ function PanelViewer:replaceButtonTable()
                         self.nav_transition_toggle_callback(self)
                     else
                         local next_mode = { classic = "smooth", smooth = "animated", animated = "classic" }
-                        self.nav_transition_mode = next_mode[self.nav_transition_mode] or "classic"
+                        local mode = next_mode[self.nav_transition_mode] or "classic"
+                        self.nav_transition_mode = mode
                         self:replaceButtonTable()
                         self:update()
+                        if mode == "animated" then
+                            local ok_dev, Device = pcall(require, "device")
+                            if
+                                ok_dev
+                                and Device
+                                and Device.canDoSwipeAnimation
+                                and not Device:canDoSwipeAnimation()
+                            then
+                                local ok_info, InfoMessage = pcall(require, "ui/widget/infomessage")
+                                if ok_info and InfoMessage and InfoMessage.new then
+                                    pcall(function()
+                                        UIManager:show(InfoMessage:new({
+                                            text = _(
+                                                "Requires special e-ink devices swipe hardware support (Kindles, Kobos, etc..) not compatible with Android and Desktop (Linux)"
+                                            ),
+                                            timeout = 3,
+                                        }))
+                                    end)
+                                end
+                            end
+                        end
                     end
                 end,
                 hold_callback = function()
