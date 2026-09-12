@@ -38,6 +38,104 @@ describe("PanelViewer keyboard navigation with A/D and Left/Right keys", functio
         assert.equals(1, prev_spy:callCount())
     end)
 
+    it("turns pages forward with D and Right arrow, backward with A and Left arrow in comic mode", function()
+        local next_spy, prev_spy = spy(), spy()
+        local viewer = PanelViewer:new({
+            reading_mode = "comic",
+            onShowNextImage = next_spy,
+            onShowPrevImage = prev_spy,
+        })
+
+        viewer:onKeyPress("D")
+        viewer:onKeyPress("Right")
+        assert.equals(2, next_spy:callCount())
+        assert.equals(0, prev_spy:callCount())
+
+        viewer:onKeyPress("A")
+        viewer:onKeyPress("Left")
+        assert.equals(2, next_spy:callCount())
+        assert.equals(2, prev_spy:callCount())
+    end)
+
+    it("turns pages forward with A and Left arrow, backward with D and Right arrow in manga mode", function()
+        local next_spy, prev_spy = spy(), spy()
+        local viewer = PanelViewer:new({
+            reading_mode = "manga",
+            onShowNextImage = next_spy,
+            onShowPrevImage = prev_spy,
+        })
+
+        viewer:onKeyPress("A")
+        viewer:onKeyPress("Left")
+        assert.equals(2, next_spy:callCount())
+        assert.equals(0, prev_spy:callCount())
+
+        viewer:onKeyPress("D")
+        viewer:onKeyPress("Right")
+        assert.equals(2, next_spy:callCount())
+        assert.equals(2, prev_spy:callCount())
+    end)
+
+    it("handles Key objects and onKeyRepeat for Left, Right, A, and D", function()
+        local next_spy, prev_spy = spy(), spy()
+        local viewer = PanelViewer:new({
+            reading_mode = "comic",
+            onShowNextImage = next_spy,
+            onShowPrevImage = prev_spy,
+        })
+
+        viewer:onKeyPress({ key = "Right" })
+        viewer:onKeyPress({ key = "D" })
+        viewer:onKeyRepeat("Right")
+        viewer:onKeyRepeat("D")
+        assert.equals(4, next_spy:callCount())
+        assert.equals(0, prev_spy:callCount())
+
+        viewer:onKeyPress({ key = "Left" })
+        viewer:onKeyPress({ key = "A" })
+        viewer:onKeyRepeat("Left")
+        viewer:onKeyRepeat("A")
+        assert.equals(4, next_spy:callCount())
+        assert.equals(4, prev_spy:callCount())
+    end)
+
+    it("crosses document page boundaries with Left, Right, A, and D", function()
+        local boundary_spy = spy()
+        boundary_spy.return_value = true
+
+        -- Last panel in comic mode: D and Right cross to next page
+        local viewer_last = PanelViewer:new({
+            reading_mode = "comic",
+            _images_list_cur = 3,
+            _images_list_nb = 3,
+            boundary_callback = boundary_spy,
+        })
+
+        viewer_last:onKeyPress("D")
+        assert.is_true(boundary_spy:called())
+        assert.equals("next", boundary_spy:lastCall()[1])
+
+        viewer_last:onKeyPress("Right")
+        assert.equals(2, boundary_spy:callCount())
+        assert.equals("next", boundary_spy:lastCall()[1])
+
+        -- First panel in comic mode: A and Left cross to previous page
+        local viewer_first = PanelViewer:new({
+            reading_mode = "comic",
+            _images_list_cur = 1,
+            _images_list_nb = 3,
+            boundary_callback = boundary_spy,
+        })
+
+        viewer_first:onKeyPress("A")
+        assert.equals(3, boundary_spy:callCount())
+        assert.equals("previous", boundary_spy:lastCall()[1])
+
+        viewer_first:onKeyPress("Left")
+        assert.equals(4, boundary_spy:callCount())
+        assert.equals("previous", boundary_spy:lastCall()[1])
+    end)
+
     it("handles onKeyPress strings for A, a, D, d, Left, Right in comic mode", function()
         local next_spy, prev_spy = spy(), spy()
         local viewer = PanelViewer:new({
