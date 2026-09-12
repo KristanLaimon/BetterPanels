@@ -15,21 +15,15 @@
 
 <table>
   <tr>
-    <td align="center" width="30%">
-      <video src="https://github.com/user-attachments/assets/23353a47-4038-4361-8536-a907c25b981e" controls width="420"></video>
+    <td align="center" width="50%">
+      <video src=".github/1_4_0/demo_revamped.mp4" controls width="420"></video>
       <br>
-      <sub>Do not like the cropping and want to see the surroundings as well?, Want to see the panels flow fully animated from one panel to another?, granted and
-        fully customizable. (Works better in non e-ink based devices)</sub>
+      <sub>Core feature: Panel by panel smooth travelling. Battle-tested for performance on low-specs e-readers and old KOReader versions support.</sub>
     </td>
-    <td align="center" width="40%">
-      <video src="https://github.com/user-attachments/assets/446c71c6-a8f7-47ce-ae44-0fc885ed3241" controls width="420"></video>
+    <td align="center" width="50%">
+      <video src=".github/1_4_0/comics-showcase.mp4" controls width="420"></video>
       <br>
-      <sub>Core feature: Panel by panel smooth travelling. Battle-tested for performance on low-specs e-readers and old Koreaders versions support.</sub>
-    </td>
-    <td align="center" width="30%">
-      <video src="https://github.com/user-attachments/assets/aa34d5db-8e47-4b68-bd5b-fc90d3da6493" controls width="420"></video>
-      <br>
-      <sub>Additional Features: Manga/Comic direction, cropping, precision, and much more!. Margin and Loose cropping are configurable by just long-pressing those buttons.</sub>
+      <sub>Comics showcase: Reading comic books panel by panel with custom panel flow and navigation.</sub>
     </td>
   </tr>
 </table>
