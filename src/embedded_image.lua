@@ -205,15 +205,17 @@ end
 EmbeddedImage.suspendSearchRepaints = suspendSearchRepaints
 EmbeddedImage.resumeSearchRepaints = resumeSearchRepaints
 
---- Move ReaderRolling while an embedded-image boundary search is hidden by
---- the still-open panel viewer. ReaderRolling emits `PageChangeAnimation` for
---- every `GotoPage`; on supported e-ink devices that arms a one-shot hardware
---- swipe for the next refresh. Cancel that one-shot after the synchronous
---- event dispatch so intervening text pages do not each animate underneath
---- the overlay. With repaints suspended, intervening pages also do not trigger
---- any framebuffer/e-ink refreshes while searching.
-local function gotoSearchPage(ui, page)
-    ui:handleEvent(Event:new("GotoPage", page))
+--- Move crengine/document while an embedded-image boundary search is hidden by
+--- the still-open panel viewer. Internal document turns use `document:gotoPage(page, true)`
+--- to update the document position without broadcasting full `GotoPage` UI events
+--- to ReaderUI modules, avoiding spurious reader page-turn refreshes on every page.
+local function gotoSearchPage(ui, page, is_internal)
+    local document = ui and ui.document
+    if is_internal and document and document.gotoPage then
+        document:gotoPage(page, true)
+    elseif ui and ui.handleEvent then
+        ui:handleEvent(Event:new("GotoPage", page))
+    end
     if type(Screen.setSwipeAnimations) == "function" then
         Screen:setSwipeAnimations(false)
     end
@@ -410,7 +412,6 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
     })
     if options.replace_viewer then
-        resumeSearchRepaints(self)
         -- All search-page turns were deliberately silent. Arm one animation
         -- only now, immediately before the old crop is replaced by the
         -- destination crop. The shared controller applies the Panels+/KOReader
@@ -418,9 +419,19 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         if options.boundary_direction then
             self:armPageTurnAnimation(options.boundary_direction, options.replace_viewer)
         end
+
+        -- Put the destination above the source before repaints resume. Closing
+        -- the source first briefly exposes ReaderUI, whose dirty reflow page
+        -- is then refreshed before this viewer and produces a visible flash.
+        -- `show()` is intentionally called while search repaints are suspended;
+        -- after resuming, closing the now-covered source marks only this
+        -- fullscreen destination dirty, yielding one final screen update.
+        UIManager:show(viewer)
+        resumeSearchRepaints(self)
         UIManager:close(options.replace_viewer)
+    else
+        UIManager:show(viewer)
     end
-    UIManager:show(viewer)
     -- A forward boundary lands at the first panel of the next image, while a
     -- backward boundary must land at the last panel of the previous image.
     -- Starting at panel 1 in both directions made backward page crossings
@@ -540,7 +551,6 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, genera
     end
     local image = self:findEmbeddedImageOnCurrentPage()
     if image then
-        resumeSearchRepaints(self)
         local shown = self:showEmbeddedImagePanelsForImage(image, {
             replace_viewer = viewer,
             boundary_direction = direction,
@@ -548,7 +558,6 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, genera
         if shown then
             return true
         end
-        suspendSearchRepaints(self)
     end
 
     local next_page = direction == "next" and document:getNextPage(page) or document:getPrevPage(page)
@@ -559,7 +568,7 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, genera
         end
         return false
     end
-    gotoSearchPage(ui, next_page)
+    gotoSearchPage(ui, next_page, true)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end
@@ -592,7 +601,7 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
     end
 
     suspendSearchRepaints(self)
-    gotoSearchPage(self.ui, next_page)
+    gotoSearchPage(self.ui, next_page, true)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end

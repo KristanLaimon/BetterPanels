@@ -344,6 +344,40 @@ describe("EmbeddedImage repaint suppression during search", function()
         UIManager.setSuspendRepaints = old_suspend
     end)
 
+    it("uses internal document:gotoPage(page, true) when present during search turns", function()
+        local goto_calls = {}
+        local handle_calls = {}
+
+        local plugin = {
+            ui = {
+                document = {
+                    getCurrentPage = function()
+                        return 10
+                    end,
+                    getNextPage = function(_, page)
+                        return page == 10 and 11 or 0
+                    end,
+                    gotoPage = function(_, page, internal)
+                        table.insert(goto_calls, { page = page, internal = internal })
+                    end,
+                },
+                handleEvent = function(_, ev)
+                    table.insert(handle_calls, ev)
+                end,
+            },
+            openNextEmbeddedImagePage = function() end,
+        }
+        local viewer = {
+            releaseEmbeddedSource = function() end,
+        }
+
+        assert.is_true(EmbeddedImage.onEmbeddedImageBoundary(plugin, "next", viewer))
+        assert.equals(1, #goto_calls, "internal document.gotoPage should be called instead of broadcasting GotoPage")
+        assert.equals(11, goto_calls[1].page)
+        assert.equals(true, goto_calls[1].internal)
+        assert.equals(0, #handle_calls, "no full UI GotoPage event should be broadcast on intermediate search steps")
+    end)
+
     it("keeps repaints suspended across intermediate pages and resumes when image is found", function()
         local suspend_calls = {}
         local old_suspend = UIManager.setSuspendRepaints
@@ -358,8 +392,7 @@ describe("EmbeddedImage repaint suppression during search", function()
 
         local handle = spy()
         local image = { w = 600, h = 800 }
-        local show_spy = spy()
-        show_spy.return_value = true
+        local show_calls = 0
         local current_page_has_image = false
 
         local plugin = {
@@ -374,7 +407,11 @@ describe("EmbeddedImage repaint suppression during search", function()
             findEmbeddedImageOnCurrentPage = function()
                 return current_page_has_image and image or nil
             end,
-            showEmbeddedImagePanelsForImage = show_spy,
+            showEmbeddedImagePanelsForImage = function(plugin_self)
+                show_calls = show_calls + 1
+                EmbeddedImage.resumeSearchRepaints(plugin_self)
+                return true
+            end,
             _embedded_search_generation = 1,
             _embedded_search_suspended = true,
         }
@@ -388,16 +425,77 @@ describe("EmbeddedImage repaint suppression during search", function()
         assert.equals("GotoPage", handle:lastCall()[2].name)
         assert.equals(12, handle:lastCall()[2].args[1])
 
-        -- Page 12 has image: repaints must be resumed before showing the new viewer
+        -- Page 12 has an image: the real replacement resumes only after the
+        -- destination viewer has been stacked above the source viewer.
         current_page_has_image = true
         assert.is_true(EmbeddedImage.openNextEmbeddedImagePage(plugin, 12, "next", viewer, 1))
         assert.equals(1, #suspend_calls)
         assert.equals(false, suspend_calls[1].state)
         assert.equals(nil, plugin._embedded_search_suspended)
-        assert.is_true(show_spy:called())
+        assert.equals(1, show_calls)
 
         UIManager.setSuspendRepaints = old_suspend
         UIManager.tickAfterNext = old_tick
+    end)
+
+    it("stacks the destination before resuming and closing the source viewer", function()
+        local PageBitmap = require("src._pagebitmap")
+        local ComponentDetector = require("src._componentdetector")
+        local old_build = PageBitmap.buildFromBlitbuffer
+        local old_detect = ComponentDetector.detectPage
+        local old_show, old_close = UIManager.show, UIManager.close
+        local old_suspend = UIManager.setSuspendRepaints
+        local events = {}
+
+        PageBitmap.buildFromBlitbuffer = function()
+            return {}
+        end
+        ComponentDetector.detectPage = function()
+            return { { x = 0, y = 0, w = 600, h = 800 } }
+        end
+        UIManager.show = function(_, widget)
+            table.insert(events, { name = "show", widget = widget })
+        end
+        UIManager.close = function(_, widget)
+            table.insert(events, { name = "close", widget = widget })
+        end
+        UIManager.setSuspendRepaints = function(_, state)
+            table.insert(events, { name = "suspend", state = state })
+        end
+
+        local source = {}
+        local plugin = {
+            settings = {
+                mode = "manga",
+                crop_mode = "strict",
+                embedded_nav_transition_mode = "classic",
+            },
+            ui = {},
+            armPageTurnAnimation = function() end,
+            _embedded_search_suspended = true,
+        }
+        local image = {
+            w = 600,
+            h = 800,
+            getType = function()
+                return 1
+            end,
+        }
+
+        assert.is_true(EmbeddedImage.showEmbeddedImagePanelsForImage(plugin, image, {
+            replace_viewer = source,
+            boundary_direction = "next",
+        }))
+        assert.equals("show", events[1].name)
+        assert.equals("suspend", events[2].name)
+        assert.equals(false, events[2].state)
+        assert.equals("close", events[3].name)
+        assert.equals(source, events[3].widget)
+
+        PageBitmap.buildFromBlitbuffer = old_build
+        ComponentDetector.detectPage = old_detect
+        UIManager.show, UIManager.close = old_show, old_close
+        UIManager.setSuspendRepaints = old_suspend
     end)
 
     it("resumes repaints when reaching document boundary without an image", function()
