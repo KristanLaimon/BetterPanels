@@ -186,12 +186,32 @@ local function extractImage(document, pos)
     return nil
 end
 
+--- Suspend UI repaints during background reflow-page search to prevent screen flashing.
+local function suspendSearchRepaints(plugin)
+    if not plugin._embedded_search_suspended and type(UIManager.setSuspendRepaints) == "function" then
+        UIManager:setSuspendRepaints(true, 5)
+        plugin._embedded_search_suspended = true
+    end
+end
+
+--- Resume UI repaints once the next image is found, document boundary is reached, or search cancelled.
+local function resumeSearchRepaints(plugin)
+    if plugin._embedded_search_suspended and type(UIManager.setSuspendRepaints) == "function" then
+        UIManager:setSuspendRepaints(false)
+        plugin._embedded_search_suspended = nil
+    end
+end
+
+EmbeddedImage.suspendSearchRepaints = suspendSearchRepaints
+EmbeddedImage.resumeSearchRepaints = resumeSearchRepaints
+
 --- Move ReaderRolling while an embedded-image boundary search is hidden by
 --- the still-open panel viewer. ReaderRolling emits `PageChangeAnimation` for
 --- every `GotoPage`; on supported e-ink devices that arms a one-shot hardware
 --- swipe for the next refresh. Cancel that one-shot after the synchronous
 --- event dispatch so intervening text pages do not each animate underneath
---- the overlay. The successful replacement explicitly arms one final swipe.
+--- the overlay. With repaints suspended, intervening pages also do not trigger
+--- any framebuffer/e-ink refreshes while searching.
 local function gotoSearchPage(ui, page)
     ui:handleEvent(Event:new("GotoPage", page))
     if type(Screen.setSwipeAnimations) == "function" then
@@ -390,6 +410,7 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
     })
     if options.replace_viewer then
+        resumeSearchRepaints(self)
         -- All search-page turns were deliberately silent. Arm one animation
         -- only now, immediately before the old crop is replaced by the
         -- destination crop. The shared controller applies the Panels+/KOReader
@@ -489,6 +510,7 @@ function EmbeddedImage:cancelEmbeddedImageSearch(viewer)
     if not viewer or self._embedded_search_viewer == viewer then
         self._embedded_search_viewer = nil
     end
+    resumeSearchRepaints(self)
 end
 
 --- Queue one search step only while its embedded viewer remains current.
@@ -513,21 +535,25 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, genera
         or (generation and generation ~= self._embedded_search_generation)
         or (viewer and viewer._panels_plus_closed)
     then
+        resumeSearchRepaints(self)
         return false
     end
     local image = self:findEmbeddedImageOnCurrentPage()
-    if
-        image
-        and self:showEmbeddedImagePanelsForImage(image, {
+    if image then
+        resumeSearchRepaints(self)
+        local shown = self:showEmbeddedImagePanelsForImage(image, {
             replace_viewer = viewer,
             boundary_direction = direction,
         })
-    then
-        return true
+        if shown then
+            return true
+        end
+        suspendSearchRepaints(self)
     end
 
     local next_page = direction == "next" and document:getNextPage(page) or document:getPrevPage(page)
     if not next_page or next_page == 0 then
+        resumeSearchRepaints(self)
         if viewer then
             UIManager:close(viewer)
         end
@@ -565,6 +591,7 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
         viewer:releaseEmbeddedSource(true)
     end
 
+    suspendSearchRepaints(self)
     gotoSearchPage(self.ui, next_page)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true

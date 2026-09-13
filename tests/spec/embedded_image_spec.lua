@@ -307,3 +307,157 @@ describe("EmbeddedImage device rotation", function()
         UIManager.close, UIManager.broadcastEvent, UIManager.onRotation = old_close, old_broadcast, old_rotation
     end)
 end)
+
+describe("EmbeddedImage repaint suppression during search", function()
+    it("suspends repaints when boundary search begins to prevent screen flashing", function()
+        local suspend_calls = {}
+        local old_suspend = UIManager.setSuspendRepaints
+        UIManager.setSuspendRepaints = function(_, state, timeout)
+            table.insert(suspend_calls, { state = state, timeout = timeout })
+        end
+
+        local handle = spy()
+        local plugin = {
+            ui = {
+                document = {
+                    getCurrentPage = function()
+                        return 10
+                    end,
+                    getNextPage = function(_, page)
+                        return page == 10 and 11 or 0
+                    end,
+                },
+                handleEvent = handle,
+            },
+            openNextEmbeddedImagePage = function() end,
+        }
+        local viewer = {
+            releaseEmbeddedSource = function() end,
+        }
+
+        assert.is_true(EmbeddedImage.onEmbeddedImageBoundary(plugin, "next", viewer))
+        assert.equals(1, #suspend_calls)
+        assert.equals(true, suspend_calls[1].state)
+        assert.equals(5, suspend_calls[1].timeout)
+        assert.equals(true, plugin._embedded_search_suspended)
+
+        UIManager.setSuspendRepaints = old_suspend
+    end)
+
+    it("keeps repaints suspended across intermediate pages and resumes when image is found", function()
+        local suspend_calls = {}
+        local old_suspend = UIManager.setSuspendRepaints
+        local old_tick = UIManager.tickAfterNext
+        UIManager.setSuspendRepaints = function(_, state, timeout)
+            table.insert(suspend_calls, { state = state, timeout = timeout })
+        end
+        UIManager.tickAfterNext = function(_, callback)
+            UIManager._test_tick = callback
+            return true
+        end
+
+        local handle = spy()
+        local image = { w = 600, h = 800 }
+        local show_spy = spy()
+        show_spy.return_value = true
+        local current_page_has_image = false
+
+        local plugin = {
+            ui = {
+                document = {
+                    getNextPage = function(_, page)
+                        return page + 1
+                    end,
+                },
+                handleEvent = handle,
+            },
+            findEmbeddedImageOnCurrentPage = function()
+                return current_page_has_image and image or nil
+            end,
+            showEmbeddedImagePanelsForImage = show_spy,
+            _embedded_search_generation = 1,
+            _embedded_search_suspended = true,
+        }
+        local viewer = {}
+        plugin._embedded_search_viewer = viewer
+
+        -- Page 11 has no image: repaints must stay suspended and advance to page 12
+        assert.is_true(EmbeddedImage.openNextEmbeddedImagePage(plugin, 11, "next", viewer, 1))
+        assert.equals(0, #suspend_calls, "repaints should remain suspended while traversing text pages")
+        assert.equals(true, plugin._embedded_search_suspended)
+        assert.equals("GotoPage", handle:lastCall()[2].name)
+        assert.equals(12, handle:lastCall()[2].args[1])
+
+        -- Page 12 has image: repaints must be resumed before showing the new viewer
+        current_page_has_image = true
+        assert.is_true(EmbeddedImage.openNextEmbeddedImagePage(plugin, 12, "next", viewer, 1))
+        assert.equals(1, #suspend_calls)
+        assert.equals(false, suspend_calls[1].state)
+        assert.equals(nil, plugin._embedded_search_suspended)
+        assert.is_true(show_spy:called())
+
+        UIManager.setSuspendRepaints = old_suspend
+        UIManager.tickAfterNext = old_tick
+    end)
+
+    it("resumes repaints when reaching document boundary without an image", function()
+        local suspend_calls = {}
+        local old_suspend = UIManager.setSuspendRepaints
+        local old_close = UIManager.close
+        local close_spy = spy()
+        UIManager.setSuspendRepaints = function(_, state, timeout)
+            table.insert(suspend_calls, { state = state, timeout = timeout })
+        end
+        UIManager.close = close_spy
+
+        local plugin = {
+            ui = {
+                document = {
+                    getNextPage = function()
+                        return 0 -- End of document
+                    end,
+                },
+            },
+            findEmbeddedImageOnCurrentPage = function()
+                return nil
+            end,
+            _embedded_search_generation = 1,
+            _embedded_search_suspended = true,
+        }
+        local viewer = {}
+        plugin._embedded_search_viewer = viewer
+
+        assert.is_false(EmbeddedImage.openNextEmbeddedImagePage(plugin, 20, "next", viewer, 1))
+        assert.equals(1, #suspend_calls)
+        assert.equals(false, suspend_calls[1].state)
+        assert.equals(nil, plugin._embedded_search_suspended)
+        assert.is_true(close_spy:called())
+
+        UIManager.setSuspendRepaints = old_suspend
+        UIManager.close = old_close
+    end)
+
+    it("resumes repaints when search is cancelled", function()
+        local suspend_calls = {}
+        local old_suspend = UIManager.setSuspendRepaints
+        UIManager.setSuspendRepaints = function(_, state, timeout)
+            table.insert(suspend_calls, { state = state, timeout = timeout })
+        end
+
+        local viewer = {}
+        local plugin = {
+            _embedded_search_generation = 3,
+            _embedded_search_viewer = viewer,
+            _embedded_search_suspended = true,
+        }
+
+        EmbeddedImage.cancelEmbeddedImageSearch(plugin, viewer)
+        assert.equals(4, plugin._embedded_search_generation)
+        assert.equals(nil, plugin._embedded_search_viewer)
+        assert.equals(1, #suspend_calls)
+        assert.equals(false, suspend_calls[1].state)
+        assert.equals(nil, plugin._embedded_search_suspended)
+
+        UIManager.setSuspendRepaints = old_suspend
+    end)
+end)

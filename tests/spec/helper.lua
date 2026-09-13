@@ -197,6 +197,7 @@ preload("ui/uimanager", function()
     for _, method_name in ipairs({
         "sendEvent",
         "setDirty",
+        "setSuspendRepaints",
         "forceRePaint",
         "tickAfterNext",
         "unschedule",
