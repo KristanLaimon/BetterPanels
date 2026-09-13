@@ -16,6 +16,8 @@
             "platforms": ["koreader"],
             "category": "reading",
             "source": "https://github.com/KristanLaimon/PanelsPlus",
+            "source_asset": "panels_plus.koplugin.zip",
+            "plugin_module": "panels_plus",
             "readme_url": "https://raw.githubusercontent.com/KristanLaimon/PanelsPlus/main/README.md",
             "published_at": "2026-08-20T07:22:26Z",
             "assets": [
