@@ -205,17 +205,13 @@ end
 EmbeddedImage.suspendSearchRepaints = suspendSearchRepaints
 EmbeddedImage.resumeSearchRepaints = resumeSearchRepaints
 
---- Move crengine/document while an embedded-image boundary search is hidden by
---- the still-open panel viewer. Internal document turns use `document:gotoPage(page, true)`
---- to update the document position without broadcasting full `GotoPage` UI events
---- to ReaderUI modules, avoiding spurious reader page-turn refreshes on every page.
-local function gotoSearchPage(ui, page, is_internal)
-    local document = ui and ui.document
-    if is_internal and document and document.gotoPage then
-        document:gotoPage(page, true)
-    elseif ui and ui.handleEvent then
-        ui:handleEvent(Event:new("GotoPage", page))
-    end
+--- Move through ReaderRolling so its page, xpointer and ReaderView stay in sync.
+--- Calling document:gotoPage directly bypasses those updates; its `internal`
+--- argument selects page numbering, not repaint suppression. The source viewer
+--- covers the search, and repaint suspension is used where supported. Cancel
+--- each intermediate hardware swipe; replacement arms the destination swipe.
+local function gotoSearchPage(ui, page)
+    ui:handleEvent(Event:new("GotoPage", page))
     if type(Screen.setSwipeAnimations) == "function" then
         Screen:setSwipeAnimations(false)
     end
@@ -412,7 +408,7 @@ function EmbeddedImage:showEmbeddedImagePanelsForImage(image, options)
         end,
     })
     if options.replace_viewer then
-        -- All search-page turns were deliberately silent. Arm one animation
+        -- All search-page swipe animations were cancelled. Arm one animation
         -- only now, immediately before the old crop is replaced by the
         -- destination crop. The shared controller applies the Panels+/KOReader
         -- sync preference and suppresses this while Smooth mode is selected.
@@ -568,7 +564,7 @@ function EmbeddedImage:openNextEmbeddedImagePage(page, direction, viewer, genera
         end
         return false
     end
-    gotoSearchPage(ui, next_page, true)
+    gotoSearchPage(ui, next_page)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end
@@ -601,7 +597,7 @@ function EmbeddedImage:onEmbeddedImageBoundary(direction, viewer)
     end
 
     suspendSearchRepaints(self)
-    gotoSearchPage(self.ui, next_page, true)
+    gotoSearchPage(self.ui, next_page)
     scheduleEmbeddedImageSearch(self, next_page, direction, viewer, generation)
     return true
 end

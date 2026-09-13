@@ -344,25 +344,32 @@ describe("EmbeddedImage repaint suppression during search", function()
         UIManager.setSuspendRepaints = old_suspend
     end)
 
-    it("uses internal document:gotoPage(page, true) when present during search turns", function()
+    it("keeps reader position synchronized even when document.gotoPage is available", function()
         local goto_calls = {}
         local handle_calls = {}
+        local document_page, reader_page, reader_xpointer = 10, 10, "page:10"
 
         local plugin = {
             ui = {
                 document = {
                     getCurrentPage = function()
-                        return 10
+                        return document_page
                     end,
                     getNextPage = function(_, page)
                         return page == 10 and 11 or 0
                     end,
                     gotoPage = function(_, page, internal)
                         table.insert(goto_calls, { page = page, internal = internal })
+                        document_page = page
                     end,
                 },
-                handleEvent = function(_, ev)
+                handleEvent = function(ui, ev)
                     table.insert(handle_calls, ev)
+                    if ev.name == "GotoPage" then
+                        ui.document:gotoPage(ev.args[1])
+                        reader_page = document_page
+                        reader_xpointer = "page:" .. document_page
+                    end
                 end,
             },
             openNextEmbeddedImagePage = function() end,
@@ -372,10 +379,12 @@ describe("EmbeddedImage repaint suppression during search", function()
         }
 
         assert.is_true(EmbeddedImage.onEmbeddedImageBoundary(plugin, "next", viewer))
-        assert.equals(1, #goto_calls, "internal document.gotoPage should be called instead of broadcasting GotoPage")
+        assert.equals(1, #goto_calls)
         assert.equals(11, goto_calls[1].page)
-        assert.equals(true, goto_calls[1].internal)
-        assert.equals(0, #handle_calls, "no full UI GotoPage event should be broadcast on intermediate search steps")
+        assert.equals(nil, goto_calls[1].internal, "search pages use the reader's public page numbering")
+        assert.equals(1, #handle_calls)
+        assert.equals(11, reader_page)
+        assert.equals("page:11", reader_xpointer)
     end)
 
     it("keeps repaints suspended across intermediate pages and resumes when image is found", function()
