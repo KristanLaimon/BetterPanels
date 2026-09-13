@@ -76,17 +76,16 @@ This could work with even older versions, but not personally tested. If any issu
     </td>
   </tr>
 </table>
-
 ## 📦 Installation
 
 ### 🛍️ Package Managers
 
 Panels+ is structured for installation via KOReader package and plugin managers:
 
-| Package Manager                                                                                | Search / Package Name                                                                               | Installation Method                                                                                                                                                    |
-| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**Plugin Appstore**](https://github.com/omer-faruq/appstore.koplugin) (`appstore.koplugin`)   | [`Panels+`](https://omer-faruq.github.io/appstore.koplugin/?q=panels+plus) (`panels_plus.koplugin`) | Search and install directly inside the KOReader Plugin Appstore (or view on the [Appstore Web Catalog](https://omer-faruq.github.io/appstore.koplugin/?q=panels+plus)) |
-| [**ZEN Package Manager**](https://github.com/AnthonyGress/zen_ui.koplugin) (`zen_ui.koplugin`) | [`Panels+`](https://omer-faruq.github.io/appstore.koplugin/?q=panels+plus) (`panels_plus`)          | Available directly in the ZEN package manager catalog.                                                                                                                 |
+| Package Manager | Search / Package Name | Installation Method |
+| :--- | :--- | :--- |
+| [**Plugin Appstore**](https://github.com/omer-faruq/appstore.koplugin) (`appstore.koplugin`) | [`Panels+`](https://omer-faruq.github.io/appstore.koplugin/?q=panels+plus) (`panels_plus.koplugin`) | Search and install directly inside the KOReader Plugin Appstore (or view on the [Appstore Web Catalog](https://omer-faruq.github.io/appstore.koplugin/?q=panels+plus)).<br><br> |
+| [**ZEN Package Manager**](https://github.com/AnthonyGress/zen_ui.koplugin) (`zen_ui.koplugin`) | `panelsplus` | Available directly in the ZEN package manager catalog.<br><br><img width="150" alt="screenshot-2026-09-12_20-01-13" src="https://github.com/user-attachments/assets/f1b4c0ba-802c-4627-b3aa-41393ab1386c" /> |
 
 ### 🛠️ Manual Installation
 
